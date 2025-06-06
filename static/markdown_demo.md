@@ -1,6 +1,6 @@
 
 
-Markdown is a lightweight markup language that allows users to create formatted text using a plain-text editor. Archivium uses a slightly modified version of this language — for a more in-depth walkthrough, see the [Markdown Guide](https://github.com/JoelNiemela/archivium/wiki/Markdown-Guide) on GitHub. Below are a few examples that you can experiment with:
+Markdown is a lightweight markup language that allows users to create formatted text using a plain-text editor. Archivium uses a slightly modified version of this language — for a more in-depth walkthrough, see the [Markdown Guide](https://github.com/HMI-Studios/archivium/wiki/Markdown-Guide) on GitHub. Below are a few examples that you can experiment with:
 
 
 # Heading 1

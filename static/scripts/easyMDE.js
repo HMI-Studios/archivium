@@ -30,7 +30,7 @@ function setupEasyMDE(selector, renderContext = {}, extraSettings = {}) {
         '|',
         {
           name: 'guide',
-          action: 'https://github.com/JoelNiemela/archivium/wiki/Markdown-Guide',
+          action: 'https://github.com/HMI-Studios/archivium/wiki/Markdown-Guide',
           className: 'fa fa-question-circle',
           title: 'Markdown Guide',
         },

@@ -17,8 +17,8 @@ block content
     include /static/scripts/searchUtils.js
   
   h1.center Universes
-  .d-flex.align-center
-    label.mr-1( for='sort' )
+  .d-flex.align-center.scroll-x
+    label.mr-1.nowrap( for='sort' )
       b #{T('Sort by')}: 
     select( id='sort' name='sort' )
       option( value='updated_at' ) Updated
@@ -29,7 +29,7 @@ block content
       option( value='asc' ) Ascending
     .grow-1
     form.flex-row.gap-0
-      input( id='search' name='search' value=search placeholder='Search...' )
       button( type='submit' ) &#x1F50E;&#xFE0E;
+      input( id='search' name='search' value=search placeholder='Search...' )
   hr
   include ../components/universeList.pug

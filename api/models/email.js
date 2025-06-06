@@ -1,6 +1,11 @@
-const { DOMAIN, ADDR_PREFIX, DEV_MODE, SENDGRID_API_KEY } = require('../../config');
+const { MailerSend, EmailParams, Recipient, Sender } = require('mailersend');
+const { DOMAIN, ADDR_PREFIX, DEV_MODE, MAILERSEND_API_KEY } = require('../../config');
 const logger = require('../../logger');
 const { executeQuery } = require('../utils');
+const fs = require('fs');
+const path = require('path');
+const mjml = require('mjml');
+const Handlebars = require('handlebars');
 
 let api;
 function setApi(_api) {
@@ -8,64 +13,64 @@ function setApi(_api) {
 }
 
 const templates = {
-  VERIFY: ['d-04ac9be5b7fb430ba3e23b7d93115644', 'verify'],
-  NOTIFY: ['d-32bf5e61b7d14239a80a00518b1824c0', 'notify'],
-  DELETE: ['d-122cfcc3c3514b529ae2a648a4dd2650', 'delete'],
-  RESET:  ['d-ef568fa2f9934ea0b26b9b5e0c8da03a', 'reset'],
+  VERIFY: ['confirm', 'verify', 'Account Verification'],
+  NOTIFY: ['notification', 'notify', 'Notification'],
+  DELETE: ['delete', 'delete', 'User Delete Request'],
+  RESET:  ['passwordReset', 'reset', 'Password Reset'],
 };
 
-const groups = {
-  ACCOUNT_ALERTS: 29545,
-  NOTIFICATIONS: 29552,
-  NEWSLETTER: 29553,
+const mailerSend = new MailerSend({
+  apiKey: MAILERSEND_API_KEY,
+});
+
+const renderTemplate = (templateName, data) => {
+  const templatePath = path.join(__dirname, '../../mjml', `${templateName}.mjml`);
+  const mjmlRaw = fs.readFileSync(templatePath, 'utf-8');
+  const mjmlPopulated = Handlebars.compile(mjmlRaw)(data);
+  const html = mjml(mjmlPopulated, { minify: true }).html;
+  return html;
 };
 
-// using Twilio SendGrid's v3 Node.js Library
-// https://github.com/sendgrid/sendgrid-nodejs
-const sgMail = require('@sendgrid/mail')
-const sgClient = require('@sendgrid/client');
-sgMail.setApiKey(SENDGRID_API_KEY)
-sgClient.setApiKey(SENDGRID_API_KEY);
-
-async function sendEmail(topic, msg) {
-  const { to } = msg;
-  logger.info(`Sending email to ${to}...`);
+async function sendEmail(topic, toList, options) {
+  const { from, fromName, subject, text, template, templateData } = options;
+  const html = template && renderTemplate(template, templateData);
+  logger.info(`Sending email to ${toList.join(', ')}...`);
   if (DEV_MODE) {
     logger.warn('Email sending may be disabled in test env.');
   }
   try {
-    await sgMail.send(msg);
+    const emailParams = new EmailParams()
+      .setFrom(new Sender(from ?? 'contact@archivium.net', fromName ?? 'Archivium Team'))
+      .setTo(toList.map(to => new Recipient(to)))
+      .setSubject(subject);
+      
+    if (text) emailParams.setText(text);
+    if (html) emailParams.setHtml(html);
+
+    try {
+      await mailerSend.email.send(emailParams);
+    } catch (error) {
+      if (error.body) {
+        logger.error(JSON.stringify(error.body));
+      }
+    }
     logger.info('Email sent!');
-    await executeQuery('INSERT INTO sentemail (recipient, topic, sent_at) VALUES (?, ?, ?);', [to, topic, new Date()]);
+    for (const to of toList) {
+      await executeQuery('INSERT INTO sentemail (recipient, topic, sent_at) VALUES (?, ?, ?);', [to, topic, new Date()]);
+    }
   } catch (error) {
     logger.error(error);
   }
 }
 
-async function sendTemplateEmail(template, to, dynamicTemplateData, groupId, from='Archivium Team <contact@archivium.net>') {
-  const [templateId, topic] = template;
-  await sendEmail(topic, {
-    to,
-    from,
-    templateId,
-    dynamicTemplateData,
-    asm: { groupId },
+async function sendTemplateEmail([template, topic, subject], to, templateData, options={}) {
+  if (!(to instanceof Array)) to = [to];
+  await sendEmail(topic, to, {
+    subject,
+    ...options,
+    template,
+    templateData,
   });
-}
-
-async function unsubscribeUser(emails, groupId) {
-  try {
-    const [_, body] = await sgClient.request({
-      method: 'POST',
-      url: `/v3/asm/groups/${groupId}/suppressions`,
-      body: {
-        recipient_emails: emails
-      },
-    });
-    logger.info(`User successfully unsubscribed from group: ${JSON.stringify(body)}`);
-  } catch (error) {
-    logger.error(`Error unsubscribing user: ${JSON.stringify(error.response ? error.response.body : error.message)}`);
-  }
 }
 
 async function sendVerifyLink({ id, username, email }) {
@@ -77,7 +82,7 @@ async function sendVerifyLink({ id, username, email }) {
   }
   
   const verifyEmailLink = `https://${DOMAIN}${ADDR_PREFIX}/verify/${verificationKey}`;
-  await sendTemplateEmail(templates.VERIFY, email, { username, verifyEmailLink }, groups.ACCOUNT_ALERTS);
+  await sendTemplateEmail(templates.VERIFY, email, { username, verifyEmailLink });
   return false;
 }
 
@@ -104,7 +109,7 @@ async function sendPasswordReset({ id, username, email }) {
   const resetKey = await api.user.preparePasswordReset(id);
   
   const resetPasswordLink = `https://${DOMAIN}${ADDR_PREFIX}/reset-password/${resetKey}`;
-  await sendTemplateEmail(templates.RESET, email, { username, resetPasswordLink }, groups.ACCOUNT_ALERTS);
+  await sendTemplateEmail(templates.RESET, email, { username, resetPasswordLink });
 }
 
 async function trySendPasswordReset(user) {
@@ -125,10 +130,8 @@ async function trySendPasswordReset(user) {
 module.exports = {
   setApi,
   templates,
-  groups,
   sendEmail,
   sendTemplateEmail,
-  unsubscribeUser,
   sendVerifyLink,
   trySendVerifyLink,
   sendPasswordReset,

@@ -76,19 +76,43 @@ block content
       h3 Change Password
       form#changePassword
         .inputGroup
-          label( for='old-password' ) Old password:
-          input( id='old-password' name='old-password' type='password' )
+          label( for='oldPassword' ) Old password:
+          input( id='oldPassword' name='old-password' type='password' )
         .inputGroup
-          label( for='new-password' ) New password:
-          input( id='new-password' name='new-password' type='password' )
+          label( for='newPassword' ) New password:
+          input( id='newPassword' name='newPassword' type='password' )
         .inputGroup
-          label( for='confirm-password' ) Confirm new password:
-          input( id='confirm-password' name='confirm-password' type='password' )
+          label( for='confirmPassword' ) Confirm new password:
+          input( id='confirmPassword' name='confirmPassword' type='password' )
         .inputGroup
           .d-flex.col-2
             button( type='submit' ) Change Password
 
         small.color-error.hidden#password-error
+
+        script.
+          (() => {
+            const form = document.forms.changePassword;
+            const formError = document.querySelector('#password-error');
+            form.addEventListener('submit', async (e) => {
+              formError.classList.add('hidden');
+              e.preventDefault();
+
+              if (form.newPassword.value !== form.confirmPassword.value) {
+                formError.innerText = 'Error: new passwords do not match.';
+                formError.classList.remove('hidden');
+                return;
+              }
+
+              const [response, data] = await putJSON(`/api/users/#{user.username}/password`, { oldPassword: form.oldPassword.value, newPassword: form.newPassword.value });
+              if (response.status === 200) {
+                window.location.reload();
+              } else {
+                formError.innerText = data;
+                formError.classList.remove('hidden');
+              }
+            });
+          })();
 
       h3 Request Account Deletion
       form#deleteAccount

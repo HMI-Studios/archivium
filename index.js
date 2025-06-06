@@ -147,7 +147,8 @@ app.post(`${ADDR_PREFIX}/signup`, ReCaptcha.verifyReCaptcha, async (req, res, ne
       }
 
       if (!req.body.newsletter) {
-        api.email.unsubscribeUser([req.body.email], api.email.groups.NEWSLETTER);
+        // TODO do something else here
+        // api.email.unsubscribeUser([req.body.email], api.email.groups.NEWSLETTER);
       }
 
       res.redirect(`${ADDR_PREFIX}${req.query.page || '/'}${req.query.search ? `?${req.query.search}` : ''}`);

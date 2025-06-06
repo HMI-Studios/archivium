@@ -104,7 +104,8 @@ module.exports = {
     if (code === 200) {
       const [_, user] = await api.user.getOne({ id: userId });
       if (user) {
-        // api.email.sendTemplateEmail(api.email.templates.WELCOME, req.body.email, { username: user.username }, api.email.groups.NEWSLETTER);
+        // TODO should we send a welcome email?
+        // api.email.sendTemplateEmail(api.email.templates.WELCOME, req.body.email, { username: user.username });
         return res.redirect(`${ADDR_PREFIX}/`);
       }
     } else {

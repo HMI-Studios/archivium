@@ -137,7 +137,7 @@ async function notify(target, notifType, message) {
     }
   
     if (enabledMethods[methods.EMAIL] && target.email_notifications) {
-      await api.email.sendTemplateEmail(api.email.templates.NOTIFY, target.email, { title, body, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` }, api.email.groups.NOTIFICATIONS);
+      await api.email.sendTemplateEmail(api.email.templates.NOTIFY, target.email, { title, body, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` });
     }
 
     return [200, true];

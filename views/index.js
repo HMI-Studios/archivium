@@ -79,7 +79,7 @@ module.exports = function(app) {
 
   // TEMPORARY redirect
   get('/help/markdown', async (_, res) => {
-    res.redirect('https://github.com/JoelNiemela/archivium/wiki/Markdown-Guide');
+    res.redirect('https://github.com/HMI-Studios/archivium/wiki/Markdown-Guide');
   });
 
   get('/', sites.NORMAL, pages.home);
