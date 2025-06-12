@@ -73,7 +73,7 @@ block content
             });
           })();
 
-      h3 Change Password
+      h3 #{T('Change Password')}
       form#changePassword
         .inputGroup
           label(for='oldPassword') #{T('Old password')}:
@@ -117,7 +117,7 @@ block content
       h3 #{T('Request Account Deletion')}
       form#deleteAccount
         p.mb-1.mt-0
-          b.color-error Warning!
+          b.color-error #{('Warning!')}
           br
           | #{T('Once the site owner has processed your delete request, your account ')}
           b #{T('cannot be recovered')}

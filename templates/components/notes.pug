@@ -40,27 +40,27 @@ block append styles
 
 .notes
   p.ma-0.pa-1
-    a.link.link-animated#notes-left-btn Create Note
+    a.link.link-animated#notes-left-btn #{T('Create Note')}
 
   div
     #note-control-tabs.hidden
       ul.navbarBtns.gap-2
         li.edit.navbarBtn.grow-1
-          b.navbarBtnLink.navbarText.ma-0.pa-1 Edit
+          b.navbarBtnLink.navbarText.ma-0.pa-1 #{T('Edit')}
         li.preview.navbarBtn.grow-1
-          b.navbarBtnLink.navbarText.ma-0.pa-1 Preview
+          b.navbarBtnLink.navbarText.ma-0.pa-1 #{T('Preview')}
 
   div
     #note-list.card-list
-      input( id='search' name='search' placeholder='Search...' )
+      input(id='search' name='search' placeholder='Search...')
       each note in notes
-        .sheet.card.d-flex.flex-col.gap-1( data-uuid=note.uuid data-note=note )
+        .sheet.card.d-flex.flex-col.gap-1(data-uuid=note.uuid data-note=note)
           h2.ma-0 #{note.title}
           small
-            b Author: 
-            a.link.link-animated( href=`/users/${noteAuthors[note.author_id].username}` ) #{noteAuthors[note.author_id].username}
+            b #{T('Author')}: 
+            a.link.link-animated(href=`/users/${noteAuthors[note.author_id].username}`) #{noteAuthors[note.author_id].username}
             |  — 
-            b Updated: 
+            b #{T('Updated')}: 
             | #{formatDate(note.updated_at)}
           small.body
           if note.tags

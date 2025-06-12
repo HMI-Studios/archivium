@@ -4,7 +4,7 @@
       .d-flex.justify-center(style={ 'grid-column': '1 / 4' })
         a.link.d-flex.justify-center(href=`${universeLink(universe.shortname || universe)}/items/create${type ? `?type=${type}` : ''}`)
           .navbarText.material-symbols-outlined.heavy.ma-0.pa-1.pr-0.grow-0(style={ 'font-size': '1.5rem' } onclick="showModal('new-tab-modal')") add
-          .big-text.navbarText.pa-1.grow-0 #{T('New ')}
+          .big-text.navbarText.pa-1.grow-0 #{T('New')} 
             if type && universe.obj_data
               | #{capitalize(T(`${((universe.obj_data.cats || {})[type] || [, 'Missing Category'])[0]}`))}
             else

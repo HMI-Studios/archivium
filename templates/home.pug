@@ -29,7 +29,7 @@ block content
       }, 1000);
     }
 
-  h1(align='center') Welcome to Archivium
+  h1(align='center') #{T('Welcome to Archivium')}
   br
   if !contextUser
     .sheet.big-text.ma-auto.p-indent(style={'max-width': '60rem'})
@@ -43,7 +43,7 @@ block content
         h3.navbarBtn
           a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/signup?page=%2Funiverses%2Fcreate`) #{T('Create Account')}
         small
-          i or
+          i #{T('or')}
         h3.navbarBtn
           a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/login`) #{T('Log In')}
   else if universes.length === 0
