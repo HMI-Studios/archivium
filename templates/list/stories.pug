@@ -1,5 +1,6 @@
 extends ../layout.pug
 include ../mixins.pug
+include ../components/storyCard.pug
 
 block title
   title #{T('Stories')} — #{T('Archivium')}
@@ -9,34 +10,15 @@ block breadcrumbs
   |  / 
   span #{T('Stories')}
 
-  
-mixin storyCard(story)
-  .card.sheet.gap-4.align-start(data-goto=`${ADDR_PREFIX}/stories/${story.shortname}`)
-    .d-flex.flex-col.grow-1
-      h3.ma-0
-        a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}`) #{story.title}
-      .d-flex.gap-1
-
-    .d-flex.flex-col.grow-3(style='grid-column: 2 / 4;')
-      span 
-        b #{T('Author')}: 
-        a.link.link-animated(href=`${ADDR_PREFIX}/users/${story.author}`) #{story.author}
-      .d-flex.gap-2.flex-wrap
-        span
-          b #{T('Created')}: 
-          | #{formatDate(story.created_at, true)}
-        | — 
-        span 
-          b #{T('Updated')}: 
-          | #{formatDate(story.updated_at, true)}
-
 block content
   script
+    include /static/scripts/tabs.js
     include /static/scripts/cardUtils.js
     include /static/scripts/listUtils.js
     include /static/scripts/searchUtils.js
   
   h1.center #{T('Stories')}
+
   .d-flex.align-center.scroll-x
     label.mr-1.nowrap( for='sort' )
       b #{T('Sort by')}: 
@@ -51,13 +33,42 @@ block content
     form.flex-row.gap-0
       button( type='submit' ) &#x1F50E;&#xFE0E;
       input( id='search' name='search' value=search placeholder=T('Search...') )
+
   hr
-  .card-list
+
+  -
+    const exploreStories = stories.filter(story => story.is_published);
+    let sharedStories; let myStories;
+  ul#tabBtns.navbarBtns.gap-1.mb-2.scroll-x
+    if exploreStories.length > 0
+      li.navbarBtn#bodyBtn(data-tab='explore')
+        h3.navbarBtnLink.navbarText(onclick=`showTab('explore')`) #{T('Explore')}
+      if contextUser
+        -
+          sharedStories = stories.filter(story => story.shared);
+          myStories = stories.filter(story => story.author_id === contextUser.id);
+        if sharedStories.length > 0
+          li.navbarBtn#bodyBtn(data-tab='shared')
+            h3.navbarBtnLink.navbarText(onclick=`showTab('shared')`) #{T('Shared With Me')}
+        li.navbarBtn#bodyBtn(data-tab='my-stories')
+          h3.navbarBtnLink.navbarText(onclick=`showTab('my-stories')`) #{T('My Stories')}
+
+  .tabs
+    if exploreStories.length > 0
+      .card-list.hidden(data-tab='explore')
+        each story in exploreStories
+          +storyCard(story)
     if contextUser
-      .card.sheet( data-goto=`${ADDR_PREFIX}/stories/create` )
-        .d-flex.justify-center( style={ 'grid-column': '1 / 4' } )
-          a.link.d-flex.justify-center( href=`${ADDR_PREFIX}/stories/create` )
-            .navbarText.material-symbols-outlined.heavy.ma-0.pa-1.pr-0.grow-0( style={ 'font-size': '1.5rem' } onclick="showModal('new-tab-modal')" ) add
-            .big-text.navbarText.pa-1.grow-0 #{T('New Story')}
-    each story in stories
-      +storyCard(story)
+      if sharedStories.length > 0
+        .card-list.hidden(data-tab='shared')
+          each story in sharedStories
+            +storyCard(story)
+      .card-list.hidden(data-tab='my-stories')
+        .card.sheet( data-goto=`${ADDR_PREFIX}/stories/create` )
+          .d-flex.justify-center( style={ 'grid-column': '1 / 4' } )
+            a.link.d-flex.justify-center( href=`${ADDR_PREFIX}/stories/create` )
+              .navbarText.material-symbols-outlined.heavy.ma-0.pa-1.pr-0.grow-0( style={ 'font-size': '1.5rem' } onclick="showModal('new-tab-modal')" ) add
+              .big-text.navbarText.pa-1.grow-0 #{T('New Story')}
+        each story in myStories
+          +storyCard(story)
+    

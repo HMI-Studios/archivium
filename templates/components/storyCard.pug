@@ -1,0 +1,23 @@
+mixin storyCard(story)
+  .card.sheet.gap-4.align-start(data-goto=`${ADDR_PREFIX}/stories/${story.shortname}`)
+    .d-flex.flex-col.grow-1
+      h3.ma-0
+        a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}`) #{story.title}
+      .d-flex.gap-1
+
+    .d-flex.flex-col.grow-3(style='grid-column: 2 / 4;')
+      span 
+        b #{T('Author')}: 
+        a.link.link-animated(href=`${ADDR_PREFIX}/users/${story.author}`) #{story.author}
+      span
+        - const publishedCount = Object.keys(story.chapters).filter(i => story.chapters[i].is_published).length;
+        b #{T('Chapters')}: 
+        | #{publishedCount} 
+        if contextUser && story.chapter_count - publishedCount > 0
+          small (#{story.chapter_count - publishedCount} drafts)
+      span
+        b #{T('Created')}: 
+        | #{formatDate(story.created_at, true)} 
+      span 
+        b #{T('Updated')}: 
+        | #{formatDate(story.updated_at, true)}

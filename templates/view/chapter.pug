@@ -48,11 +48,11 @@ block content
   .sheet
     #markdown-body
   #chapter-buttons.d-flex.mt-2
-    if story.chapter_titles[chapter.chapter_number - 1]
+    if story.chapters[chapter.chapter_number - 1].title
       a.button.col-1.d-flex.justify-center.align-center(href=`${ADDR_PREFIX}/stories/${story.shortname}/${chapter.chapter_number - 1}`)
         span.material-symbols-outlined(style={ 'font-size': '1rem' }) arrow_back_ios
         |  #{T('Previous Chapter')}
-    if story.chapter_titles[chapter.chapter_number + 1]
+    if story.chapters[chapter.chapter_number + 1].title
       a.button.col-2.d-flex.justify-center.align-center(href=`${ADDR_PREFIX}/stories/${story.shortname}/${chapter.chapter_number + 1}`)
         |  #{T('Next Chapter')}
         span.material-symbols-outlined(style={ 'font-size': '1rem' }) arrow_forward_ios
@@ -68,11 +68,13 @@ block content
     const universeShortname = story.universe_short;
   include ../components/comments.pug
 
+  #data(data-body=chapter.body)
   script.
     (function() {
-      const body = document.getElementById('markdown-body');
-      if (body) {
-        loadMarkdown(body, '#{story.universe_short}', `#{chapter.body}`).then(async () => {
+      const bodyEl = document.getElementById('markdown-body');
+      const body = document.getElementById('data').dataset.body;
+      if (bodyEl) {
+        loadMarkdown(bodyEl, '#{story.universe_short}', body).then(async () => {
           const hash = location.hash.substr(1);
           if (hash) {
             const el = document.getElementById(hash);

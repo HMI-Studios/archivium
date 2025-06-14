@@ -38,10 +38,10 @@ module.exports = {
   },
 
   async delete(req, res) {
-    const [code, universe] = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.OWNER);
+    const [code, story] = await api.story.getOne(req.session.user, { 'story.shortname': req.params.shortname }, perms.OWNER);
     res.status(code);
-    if (!universe) return res.redirect(`${ADDR_PREFIX}/universes`);
-    res.prepareRender('deleteUniverse', { universe });
+    if (!story) return res.redirect(`${ADDR_PREFIX}/stories`);
+    res.prepareRender('deleteStory', { story });
   },
 
   async edit(req, res, error, body) {

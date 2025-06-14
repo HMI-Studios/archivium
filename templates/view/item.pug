@@ -103,7 +103,7 @@ block content
   ul#tabBtns.navbarBtns.gap-1.mb-2.scroll-x
     if 'body' in item.obj_data
       li.navbarBtn#bodyBtn(data-tab='body')
-        h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('body')`) #{T('Main Text')}
+        h3.navbarBtnLink.navbarText(onclick=`showTab('body')`) #{T('Main Text')}
     if 'tabs' in item.obj_data
       each tab, name in item.obj_data.tabs
         li.navbarBtn(data-tab=name)

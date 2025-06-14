@@ -36,7 +36,8 @@ block content
           a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}/delete`) #{T('Delete')}
 
   hr
-  if contextUser && contextUser.id === story.author_id
+  - const canEdit = contextUser && contextUser.id === story.author_id;
+  if canEdit
     .card-list.mb-2
       .card.sheet( data-goto=`${ADDR_PREFIX}/stories/${story.shortname}/create` )
         .d-flex.justify-center( style={ 'grid-column': '1 / 4' } )
@@ -45,18 +46,18 @@ block content
             .big-text.navbarText.pa-1.grow-0 #{T('New Chapter')}
     p.center.mb-2
       i (#{T('Drag and drop to reorder chapters.')})
-  .reorder-chapters.card-list.gap-1
-    each index in story.chapters.sort((a, b) => a - b)
-      .card.sheet.sortable-item.gap-4.align-start.py-3(data-goto=`${ADDR_PREFIX}/stories/${story.shortname}/${index}` data-index=index draggable="true")
+  .card-list.gap-1(class={ 'reorder-chapters': canEdit })
+    each index in Object.keys(story.chapters).sort((a, b) => a - b)
+      .card.sheet.sortable-item.gap-4.align-start.py-3(data-goto=`${ADDR_PREFIX}/stories/${story.shortname}/${index}` data-index=index draggable=(canEdit ? "true" : "false"))
         .d-flex.align-center.gap-1(style='grid-column: 1 / 4;')
-          if contextUser && contextUser.id === story.author_id
+          if canEdit
             span.material-symbols-outlined.clickable.drag_icon(style={ width: '1.5rem', 'margin-left': '-1rem' }) drag_indicator
           h3.ma-0
-            a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}/${index}`) #{story.chapter_titles[index]}
-          if !story.chapter_published_status[index]
+            a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}/${index}`) #{story.chapters[index].title}
+          if !story.chapters[index].is_published
             span (#{T('Draft')})
           .grow-1
-          span #{formatDate(new Date(story.chapter_publish_dates[index]), true)}
+          span #{formatDate(new Date(story.chapters[index].created_at), true)}
 
   script.
     document.querySelectorAll('.drag_icon').forEach(el => {
@@ -65,35 +66,67 @@ block content
       });
     });
 
-    const list = document.querySelector('.reorder-chapters');
-    let draggedItem = null;
-
-    list.addEventListener('dragstart', (e) => {
-      if (e.target.classList.contains('sortable-item')) {
-        draggedItem = e.target;
-        e.dataTransfer.effectAllowed = 'move';
+    let saveTimeout = null;
+    let saving = false;
+    async function save(list, order, delay=1000) {
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
       }
-    });
+      saveTimeout = setTimeout(async () => {
+        console.log('SAVING...');
 
-    list.addEventListener('dragover', (e) => {
-      e.preventDefault();
-    });
-
-    list.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      const target = e.target.closest('.sortable-item');
-      if (target && target !== draggedItem) {
-        const children = Array.from(list.children);
-        const draggedIndex = children.indexOf(draggedItem);
-        const targetIndex = children.indexOf(target);
-        if (draggedIndex < targetIndex) {
-          target.after(draggedItem);
-        } else {
-          target.before(draggedItem);
+        try {
+          saving = true;
+          await putJSON(`/api/stories/#{story.shortname}`, { order });
+          console.log('SAVED.');
+          const newIndexEls = {};
+          for (let i = 0; i < order.length; i++) {
+            const oldIndex = order[i];
+            const el = list.querySelector(`.sortable-item[data-index="${oldIndex}"]`);
+            newIndexEls[i + 1] = el;
+          }
+          for (const index in newIndexEls) {
+            const el = newIndexEls[index];
+            el.dataset.index = index;
+          }
+          saving = false;
+        } catch (err) {
+          console.error('Failed to save!');
+          console.error(err);
         }
-        const newIndexes = Array.from(list.children).map(el => el.dataset.index);
-        await putJSON(`/api/stories/#{story.shortname}`, { order: newIndexes });
-        window.location.reload();
-      }
-      draggedItem = null;
-    });
+      }, delay);
+    }
+
+    const list = document.querySelector('.reorder-chapters');
+    if (list) {
+      let draggedItem = null;
+
+      list.addEventListener('dragstart', (e) => {
+        if (e.target.classList.contains('sortable-item') && !saving) {
+          draggedItem = e.target;
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      });
+
+      list.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+
+      list.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const target = e.target.closest('.sortable-item');
+        if (!saving && draggedItem && target && target !== draggedItem) {
+          const children = Array.from(list.children);
+          const draggedIndex = children.indexOf(draggedItem);
+          const targetIndex = children.indexOf(target);
+          if (draggedIndex < targetIndex) {
+            target.after(draggedItem);
+          } else {
+            target.before(draggedItem);
+          }
+          const newIndexes = Array.from(list.children).map(el => el.dataset.index);
+          save(list, newIndexes);
+        }
+        draggedItem = null;
+      });
+    }

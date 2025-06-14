@@ -55,7 +55,9 @@ module.exports = {
     if (!threads) return res.status(code3);
     const [code4, counts] = await api.item.getCountsByUniverse(req.session.user, universe, false);
     if (!counts) return res.status(code4);
-    res.prepareRender('universe', { universe, authors: authorMap, threads, counts });
+    const [code5, stories] = await api.story.getMany(req.session.user, { 'story.universe_id': universe.id });
+    if (!stories) return res.status(code5);
+    res.prepareRender('universe', { universe, authors: authorMap, threads, counts, stories });
   },
 
   async delete(req, res) {

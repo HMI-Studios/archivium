@@ -1,5 +1,6 @@
 extends ../layout.pug
 include ../mixins.pug
+include ../components/storyCard.pug
 
 block title
   title #{universe.title}
@@ -95,6 +96,9 @@ block content
     if universe.discussion_enabled
       li.navbarBtn#bodyBtn(data-tab='discuss')
         h3.navbarBtnLink.navbarText(onclick=`showTab('discuss')`) #{T('Discuss')}
+    if stories.length > 0 || (contextUser && universe.author_permissions[contextUser.id] >= perms.WRITE)
+      li.navbarBtn#bodyBtn(data-tab='stories')
+        h3.navbarBtnLink.navbarText(onclick=`showTab('stories')`) #{T('Stories')}
 
   .tabs
     .hidden( data-tab='home' )
@@ -222,4 +226,14 @@ block content
               span 
                 b #{T('Last activity')}: 
                 | #{formatDate(thread.last_activity)}
+    .hidden( data-tab='stories' )
+      .card-list.mt-3
+        if contextUser && universe.author_permissions[contextUser.id] >= perms.WRITE
+          .card.sheet( data-goto=`${ADDR_PREFIX}/stories/create` )
+            .d-flex.justify-center( style={ 'grid-column': '1 / 4' } )
+              a.link.d-flex.justify-center( href=`${ADDR_PREFIX}/stories/create` )
+                .navbarText.material-symbols-outlined.heavy.ma-0.pa-1.pr-0.grow-0( style={ 'font-size': '1.5rem' } onclick="showModal('new-tab-modal')" ) add
+                .big-text.navbarText.pa-1.grow-0 #{T('New Story')}
+        each story in stories
+          +storyCard(story)
         

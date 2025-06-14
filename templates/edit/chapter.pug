@@ -33,6 +33,10 @@ block content
         input(id='is_published' name='is_published' type='checkbox' checked=Boolean(chapter.is_published))
         span.slider
 
+    .inputGroup
+      small(style={ 'grid-column': '2 / 4' })
+        i #{T('NOTE: published chapters will be visible to everyone, even if %s is not publicly visible!', story.universe)}
+
     div
       button(type='submit') #{T('Save Changes')}
 

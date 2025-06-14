@@ -166,7 +166,10 @@ module.exports = {
   },
 
   async createStory(req, res) {
-    const [code, data] = await api.story.post(req.session.user, req.body);
+    const [code, data] = await api.story.post(req.session.user, {
+      ...req.body,
+      public: req.body.drafts_public === 'public',
+    });
     res.status(code);
     if (code === 201) return res.redirect(`${ADDR_PREFIX}/stories/${req.body.shortname}`);
     const [_, universes] = await api.universe.getMany(req.session.user, null, perms.WRITE);

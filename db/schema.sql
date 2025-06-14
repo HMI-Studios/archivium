@@ -169,8 +169,8 @@ CREATE TABLE story (
   drafts_public BOOLEAN NOT NULL,
   author_id INT,
   universe_id INT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   FOREIGN KEY (universe_id) REFERENCES universe (id) ON DELETE CASCADE
 );
@@ -183,8 +183,8 @@ CREATE TABLE storychapter (
   body TEXT NOT NULL,
   story_id INT NOT NULL,
   is_published BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
   FOREIGN KEY (story_id) REFERENCES story (id) ON DELETE CASCADE
 );
 

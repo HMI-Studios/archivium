@@ -34,7 +34,9 @@ block content
 
       p #{T('If you are ')}
         b #{T('absolutely sure')}
-        | #{T(' you want to delete %s, please type in its shortname below.', universe.title)}
+        | #{T(' you want to delete %s, please type in its shortname', universe.title)} (
+        code #{universe.shortname}
+        | ) #{T('below')}.
 
     div.inputGroup
       label(for='title') #{T('Universe shortname')}: 

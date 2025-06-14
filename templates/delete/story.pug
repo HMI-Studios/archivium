@@ -1,0 +1,47 @@
+extends ../layout.pug
+
+block content
+  script!= `const storyShortname = '${story.shortname}'`
+  script.
+    async function deleteStory() {
+      const shortname = document.getElementById('shortname').value;
+      if (shortname !== storyShortname) return;
+      const response = await fetch(`/api/stories/${storyShortname}`, { method: 'DELETE' })
+      if (response.ok) {
+        window.location.reload();
+      } else {
+        const errSpan = document.getElementById('error');
+        errSpan.innerText = await response.json();
+      }
+    }
+
+  h2 #{T('Delete %s', story.title)}
+  .d-flex.flex-col
+
+    .big-text
+      p #{T('Are you sure you want to delete %s? This action is ', story.title)}
+        b #{T('permanent')}
+        |  #{T('and')}
+        b.color-error #{T(' cannot be undone!')}
+
+      ul
+        li #{T('All chapters of %s will be deleted.', story.title)}
+        //- li #{T('All images uploaded to %s and its items will be deleted.', story.title)}
+        li #{T('All comments will be deleted.')}
+
+      p #{T('If you are ')}
+        b #{T('absolutely sure')}
+        | #{T(' you want to delete %s, please type in its shortname', story.title)} (
+        code #{story.shortname}
+        | ) #{T('below')}.
+
+    div.inputGroup
+      label(for='title') #{T('Story shortname')}: 
+      input(id='shortname' type='text' name='shortname')
+
+    .d-flex.align-center.gap-2
+      button.color-error(onclick='deleteStory()') #{T('Delete Story')}
+      a.link.link-animated(href=`${ADDR_PREFIX}/stories/${story.shortname}`) #{T('Go Back')}
+
+    div
+      span#error(style={ color: 'red', 'font-size': 'small' })

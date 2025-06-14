@@ -44,22 +44,16 @@ async function getMany(user, conditions, permissionsRequired=perms.READ, options
         story.*,
         author.username AS author,
         COUNT(sc.id) AS chapter_count,
-        JSON_REMOVE(JSON_ARRAYAGG(IFNULL(sc.chapter_number, 'null__')), '$.null__') AS chapters,
         JSON_REMOVE(JSON_OBJECTAGG(
           IFNULL(sc.chapter_number, 'null__'),
-          sc.title
-        ), '$.null__') AS chapter_titles,
-        JSON_REMOVE(JSON_OBJECTAGG(
-          IFNULL(sc.chapter_number, 'null__'),
-          sc.is_published
-        ), '$.null__') AS chapter_published_status,
-        JSON_REMOVE(JSON_OBJECTAGG(
-          IFNULL(sc.chapter_number, 'null__'),
-          sc.created_at
-        ), '$.null__') AS chapter_publish_dates,
+          JSON_OBJECT('title', sc.title, 'is_published', sc.is_published, 'created_at', sc.created_at)
+        ), '$.null__') AS chapters,
         universe.title AS universe,
         universe.shortname AS universe_short,
-        MIN(sc.is_published) AS is_published
+        MAX(sc.is_published) AS is_published
+        ${user ? `,
+        NOT ISNULL(au_filter.universe_id) AND story.drafts_public AND NOT au_filter.user_id = story.author_id AS shared
+        ` : ''}
       FROM story
       LEFT JOIN storychapter AS sc ON sc.story_id = story.id
       INNER JOIN user AS author ON author.id = story.author_id
@@ -72,7 +66,7 @@ async function getMany(user, conditions, permissionsRequired=perms.READ, options
       ` : ''}
       WHERE (is_published ${user ? `OR story.author_id = ? OR (story.drafts_public AND au_filter.universe_id IS NOT NULL)` : ''})
       ${conditionString}
-      GROUP BY story.id
+      GROUP BY story.id${user ? ', au_filter.user_id' : ''}
       ORDER BY ${options.sort ? `${options.sort} ${options.sortDesc ? 'DESC' : 'ASC'}` : 'updated_at DESC'}
     `, [ ...(user ? [user.id, perms.WRITE, user.id] : []), ...parsedConditions?.values ?? [] ]);
     return [200, stories];
@@ -110,9 +104,9 @@ async function post(user, payload) {
 
   try {
     const data = await executeQuery(`
-      INSERT INTO story (title, shortname, summary, drafts_public, author_id, universe_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [title, shortname, summary ?? null, public, user.id, universe.id]);
+      INSERT INTO story (title, shortname, summary, drafts_public, author_id, universe_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [title, shortname, summary ?? null, public, user.id, universe.id, new Date(), new Date()]);
     return [201, data];
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') return [400, `Shortname "${shortname}" already in use in this universe, please choose another.`];
@@ -131,9 +125,9 @@ async function postChapter(user, shortname, payload) {
 
   try {
     const data = await executeQuery(`
-      INSERT INTO storychapter (title, summary, chapter_number, body, story_id)
-      VALUES (?, ?, ?, ?, ?)
-    `, [title, summary ?? null, story.chapter_count + 1, '', story.id]);
+      INSERT INTO storychapter (title, summary, chapter_number, body, story_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [title, summary ?? null, story.chapter_count + 1, '', story.id, new Date(), new Date()]);
     return [201, data, story.chapter_count + 1];
   } catch (err) {
     logger.error(err);
@@ -214,7 +208,7 @@ async function putChapter(user, shortname, index, payload) {
     const [code, story] = await getOne(user, { 'story.shortname': shortname }, perms.WRITE);
     if (!story) return [code];
     
-    const published = story.chapter_published_status;
+    const published = Object.keys(story.chapters).reduce((acc, key) => ({ ...acc, [key]: story.chapters[key].is_published }), {});
     delete published[index];
     const publishedIndexes = Object.keys(published).filter(ch => published[ch]);
     const draftIndexes = Object.keys(published).filter(ch => !published[ch]);
@@ -252,8 +246,8 @@ async function del(user, shortname) {
         DELETE comment
         FROM comment
         INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
-        INNER JOIN chapter ON scc.chapter_id = chapter.id
-        WHERE chapter.story_id = ?;
+        INNER JOIN storychapter ON scc.chapter_id = storychapter.id
+        WHERE storychapter.story_id = ?;
       `, [story.id]);
       await conn.execute(`DELETE FROM story WHERE id = ?;`, [story.id]);
     });
@@ -280,7 +274,7 @@ async function delChapter(user, shortname, index) {
     });
     const [code, story] = await getOne(user, { 'story.shortname': shortname }, perms.OWNER);
     if (!story) throw new Error(`Fatal errror: story.getOne returned code ${code} after chapter deletion!`);
-    await reorderChapters(story, story.chapters);
+    await reorderChapters(story, Object.keys(story.chapters).sort((a, b) => a - b));
     return [200];
   } catch (err) {
     logger.error(err);

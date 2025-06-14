@@ -30,6 +30,7 @@ block content
     include /static/scripts/markdown/parse.js
     include /static/scripts/markdown/render.js
     include /static/scripts/easyMDE.js
+    include /static/scripts/shortname.js
 
   h2 #{T('Edit %s', universe.title)}
   form#edit(method='POST')
@@ -141,19 +142,6 @@ block content
     visibilitySelect.addEventListener('change', () => {
       publicBodyContainer.classList.toggle('hidden', visibilitySelect.value !== 'private');
     });
-
-    function toShortname(title) {
-      let shortname = title.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-
-      if (shortname.length > 64) {
-          shortname = shortname.substring(0, 64);
-      }
-
-      return shortname;
-    }
 
     function toPlural(title) {
       // This function is very hacky and only works in english (and only sometimes), but it'll be good enough for most cases for now.

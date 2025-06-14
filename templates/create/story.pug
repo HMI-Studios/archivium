@@ -12,6 +12,9 @@ block breadcrumbs
 
 block scripts
   script
+    include /static/scripts/domUtils.js
+    include /static/scripts/fetchUtils.js
+    include /static/scripts/searchableSelect.js
     include /static/scripts/shortname.js
   script.
     window.addEventListener('load', () => {
@@ -30,11 +33,6 @@ block scripts
     });
 
 block content
-  script
-    include /static/scripts/domUtils.js
-    include /static/scripts/fetchUtils.js
-    include /static/scripts/searchableSelect.js
-
   h2 #{T('New Story')}
   form(method='POST')
     div.inputGroup
@@ -56,8 +54,8 @@ block content
     div.inputGroup
       label(for='drafts_public' ) #{T('Drafts are visible to')}: 
       select(id='drafts_public' name='drafts_public' )
-        option(value='private' selected=(visibility === 'private')) #{T('Only you')}
-        option(value='public' selected=(visibility === 'public')) #{T('Universe authors')}
+        option(value='private' selected=(drafts_public === 'private')) #{T('Only you')}
+        option(value='public' selected=(drafts_public === 'public')) #{T('Universe authors')}
     div
       button(type='submit') #{T('Create Universe')}
     if error
