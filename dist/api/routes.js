@@ -4,11 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = default_1;
-const config_1 = require("../config");
+const cors_1 = __importDefault(require("cors"));
 const _1 = __importDefault(require("."));
+const config_1 = require("../config");
+const errors_1 = require("../errors");
 const logger_1 = __importDefault(require("../logger"));
 const utils_1 = require("./utils");
-const errors_1 = require("../errors");
 function default_1(app, upload) {
     class APIRoute {
         path;
@@ -73,6 +74,23 @@ function default_1(app, upload) {
         res.set('Content-Type', 'application/json; charset=utf-8');
         next();
     });
+    app.use('/api', (0, cors_1.default)({
+        origin: function (origin, callback) {
+            if (!origin)
+                return callback(null, true);
+            if (origin.startsWith('http://localhost') && config_1.DEV_MODE)
+                return callback(null, true);
+            const DOMAIN = 'archivium.net';
+            const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${DOMAIN.replace('.', '\\.')}$`, "i");
+            if (regex.test(origin)) {
+                callback(null, true);
+            }
+            else {
+                callback(new Error("Not allowed by CORS"));
+            }
+        },
+        credentials: true
+    }));
     const apiRoutes = new APIRoute('/api', {}, [
         new APIRoute('/*'),
         new APIRoute('/me', {
