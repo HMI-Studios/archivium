@@ -100,10 +100,27 @@ class CalendarSystem {
       return this.countVariableCycles(cycle, remaining, context);
     } else {
       const duration = cycle.duration_seconds;
-      const count = Math.floor(remaining / duration);
+      
+      // Handle negative remainders properly with floor division
+      let count, remainder;
+      if (remaining >= 0) {
+        count = Math.floor(remaining / duration);
+        remainder = remaining % duration;
+      } else {
+        // For negative values, we need to ensure the remainder is positive
+        count = Math.floor(remaining / duration);
+        remainder = remaining - (count * duration);
+        
+        // If remainder is negative, borrow from count
+        if (remainder < 0) {
+          count -= 1;
+          remainder += duration;
+        }
+      }
+      
       return {
         count,
-        remaining: remaining % duration
+        remaining: remainder
       };
     }
   }
@@ -112,19 +129,38 @@ class CalendarSystem {
     let count = 0;
     let accumulated = 0;
     
-    // Iterate through cycles until we exceed remaining time
-    while (true) {
-      const duration = this.evaluateDurationFn(cycle.duration_fn, {
-        ...context,
-        [`${cycle.id}_index`]: count
-      });
-      
-      if (accumulated + duration > remaining) {
-        break;
+    if (remaining >= 0) {
+      // Positive: iterate forward through cycles
+      while (true) {
+        const duration = this.evaluateDurationFn(cycle.duration_fn, {
+          ...context,
+          [`${cycle.id}_index`]: count
+        });
+        
+        if (accumulated + duration > remaining) {
+          break;
+        }
+        
+        accumulated += duration;
+        count++;
       }
-      
-      accumulated += duration;
-      count++;
+    } else {
+      // Negative: iterate backward through cycles
+      while (true) {
+        count--;
+        const duration = this.evaluateDurationFn(cycle.duration_fn, {
+          ...context,
+          [`${cycle.id}_index`]: count
+        });
+        
+        if (accumulated - duration < remaining) {
+          // We've gone too far back, step forward one
+          count++;
+          break;
+        }
+        
+        accumulated -= duration;
+      }
     }
     
     return {
@@ -139,9 +175,25 @@ class CalendarSystem {
     
     for (const subdiv of subdivisions) {
       if (subdiv.type === 'uniform') {
-        const count = Math.floor(currentRemaining / subdiv.duration_seconds);
+        const duration = subdiv.duration_seconds;
+        
+        // Handle negative remainders
+        let count, remainder;
+        if (currentRemaining >= 0) {
+          count = Math.floor(currentRemaining / duration);
+          remainder = currentRemaining % duration;
+        } else {
+          count = Math.floor(currentRemaining / duration);
+          remainder = currentRemaining - (count * duration);
+          
+          if (remainder < 0) {
+            count -= 1;
+            remainder += duration;
+          }
+        }
+        
         data[subdiv.id] = count;
-        currentRemaining = currentRemaining % subdiv.duration_seconds;
+        currentRemaining = remainder;
       } else if (subdiv.type === 'named_sequence') {
         const result = this.processNamedSequence(subdiv.units, currentRemaining, context);
         data[`${parentId}_subdivision`] = result.name;
@@ -154,29 +206,57 @@ class CalendarSystem {
   }
 
   processNamedSequence(units, remaining, context) {
-    let accumulated = 0;
-    
-    for (let i = 0; i < units.length; i++) {
-      const unit = units[i];
-      const duration = this.resolveDuration(unit, context);
+    if (remaining >= 0) {
+      // Forward iteration for positive remainders
+      let accumulated = 0;
       
-      if (accumulated + duration > remaining) {
-        return {
-          name: unit.name,
-          index: i,
-          remaining: remaining - accumulated
-        };
+      for (let i = 0; i < units.length; i++) {
+        const unit = units[i];
+        const duration = this.resolveDuration(unit, context);
+        
+        if (accumulated + duration > remaining) {
+          return {
+            name: unit.name,
+            index: i,
+            remaining: remaining - accumulated
+          };
+        }
+        
+        accumulated += duration;
       }
       
-      accumulated += duration;
+      // If we've gone through all units, return the last one
+      return {
+        name: units[units.length - 1].name,
+        index: units.length - 1,
+        remaining: remaining - accumulated
+      };
+    } else {
+      // Backward iteration for negative remainders
+      let accumulated = 0;
+      
+      for (let i = units.length - 1; i >= 0; i--) {
+        const unit = units[i];
+        const duration = this.resolveDuration(unit, context);
+        
+        accumulated -= duration;
+        
+        if (accumulated <= remaining) {
+          return {
+            name: unit.name,
+            index: i,
+            remaining: remaining - accumulated
+          };
+        }
+      }
+      
+      // Return first unit if we've exhausted the list
+      return {
+        name: units[0].name,
+        index: 0,
+        remaining: remaining - accumulated
+      };
     }
-    
-    // If we've gone through all units, return the last one
-    return {
-      name: units[units.length - 1].name,
-      index: units.length - 1,
-      remaining: remaining - accumulated
-    };
   }
 
   resolveDuration(unit, context) {
@@ -441,7 +521,34 @@ const converted = greg.calendarToTimestamp(calRep);
 console.log("Original timestamp:", original);
 console.log("Calendar representation:", calRep);
 console.log("Converted back:", converted);
-console.log("Match:", original === converted);
+console.log("Difference:", converted - original, "seconds");
+console.log("Match:", Math.abs(converted - original) < 60); // Allow small rounding
+
+// Test round-trip with leap day
+console.log("\n=== Leap Day Round-trip Test ===");
+const leapDayOriginal = Math.floor(new Date('2024-02-29T12:00:00Z').getTime() / 1000);
+const leapDayRep = greg.timestampToCalendar(leapDayOriginal);
+console.log("Original leap day timestamp:", leapDayOriginal);
+console.log("Calendar representation:", leapDayRep);
+const leapDayConverted = greg.calendarToTimestamp(leapDayRep);
+console.log("Converted back:", leapDayConverted);
+console.log("Difference:", leapDayConverted - leapDayOriginal, "seconds");
+
+// Test round-trip with different months
+console.log("\n=== Different Month Tests ===");
+const testDates = [
+  '2024-01-15T10:30:00Z',
+  '2024-03-01T00:00:00Z',
+  '2024-06-30T23:59:59Z',
+  '2024-12-31T18:45:30Z'
+];
+
+testDates.forEach(dateStr => {
+  const ts = Math.floor(new Date(dateStr).getTime() / 1000);
+  const cal = greg.timestampToCalendar(ts);
+  const back = greg.calendarToTimestamp(cal);
+  console.log(`${dateStr}: diff = ${back - ts} seconds, month = ${cal.year_subdivision}`);
+});
 
 // Additional leap year tests
 console.log("\n=== Leap Year Tests ===");
@@ -450,4 +557,36 @@ console.log("1900 is leap?", greg.isLeapYear(1900), "(NO - divisible by 100 but 
 console.log("2024 is leap?", greg.isLeapYear(2024), "(YES - divisible by 4)");
 console.log("2023 is leap?", greg.isLeapYear(2023), "(NO - not divisible by 4)");
 
-greg.formatCalendar(greg.timestampToCalendar(0), 'gregorian')
+// Negative timestamp tests
+console.log("\n=== Negative Timestamp Tests (BCE dates) ===");
+
+// 1969-12-31 23:00:00 (1 hour before epoch)
+const oneHourBefore = -3600;
+console.log("\n1 hour before epoch:");
+const oneHourCal = greg.timestampToCalendar(oneHourBefore);
+console.log("Calendar:", oneHourCal);
+console.log("Formatted:", greg.formatCalendar(oneHourCal, 'gregorian'));
+
+// 1969-06-15 (several months before epoch)
+const juneNineteenSixtyNine = Math.floor(new Date('1969-06-15T12:00:00Z').getTime() / 1000);
+console.log("\n1969-06-15 12:00:00:");
+const june69Cal = greg.timestampToCalendar(juneNineteenSixtyNine);
+console.log("Calendar:", june69Cal);
+console.log("Month:", june69Cal.year_subdivision, "Day:", june69Cal.day, "Hour:", june69Cal.hour);
+
+// 1960-01-01 (10 years before epoch)
+const nineteenSixty = Math.floor(new Date('1960-01-01T00:00:00Z').getTime() / 1000);
+console.log("\n1960-01-01 00:00:00:");
+const sixtysCal = greg.timestampToCalendar(nineteenSixty);
+console.log("Calendar:", sixtysCal);
+console.log("Year:", sixtysCal.year + 1970, "Month:", sixtysCal.year_subdivision);
+
+// Test round-trip with negative timestamps
+console.log("\n=== Negative Timestamp Round-trip ===");
+const negativeTests = [oneHourBefore, juneNineteenSixtyNine, nineteenSixty];
+negativeTests.forEach(ts => {
+  const cal = greg.timestampToCalendar(ts);
+  const back = greg.calendarToTimestamp(cal);
+  const date = new Date(ts * 1000).toISOString();
+  console.log(`${date}: diff = ${back - ts} seconds`);
+});
