@@ -1,16 +1,12 @@
-// General Calendar System Implementation
-
 class CalendarSystem {
   constructor(definition) {
     this.def = definition;
   }
 
-  // Convert timestamp to calendar representation
   timestampToCalendar(timestamp) {
     const elapsed = timestamp + this.def.epoch.timestamp;
     const result = { timestamp, elapsed };
     
-    // Process cycles from largest to smallest
     const cycles = this.getSortedCycles();
     let remaining = elapsed;
     
@@ -19,7 +15,6 @@ class CalendarSystem {
       result[cycle.id] = cycleResult.count;
       remaining = cycleResult.remaining;
       
-      // Process subdivisions
       if (cycle.subdivisions) {
         const subdivResult = this.processSubdivisions(
           cycle.subdivisions, 
@@ -31,11 +26,12 @@ class CalendarSystem {
         remaining = subdivResult.remaining;
       }
     }
+
+    if (elapsed < 0) result[cycles[0].id] -= 1; // Adjust for negative timestamps
     
     return result;
   }
 
-  // Convert calendar representation back to timestamp
   calendarToTimestamp(calendarData) {
     let timestamp = -this.def.epoch.timestamp;
     const cycles = this.getSortedCycles();
@@ -44,19 +40,27 @@ class CalendarSystem {
       const count = calendarData[cycle.id] || 0;
       
       if (cycle.duration_fn) {
-        // Variable duration - need to sum up individual cycles
-        for (let i = 0; i < count; i++) {
-          const duration = this.evaluateDurationFn(cycle.duration_fn, {
-            ...calendarData,
-            [`${cycle.id}_index`]: i
-          });
-          timestamp += duration;
+        if (count >= 0) {
+          for (let i = 0; i < count; i++) {
+            const duration = this.evaluateDurationFn(cycle.duration_fn, {
+              ...calendarData,
+              [`${cycle.id}_index`]: i
+            });
+            timestamp += duration;
+          }
+        } else {
+          for (let i = -1; i >= count; i--) {
+            const duration = this.evaluateDurationFn(cycle.duration_fn, {
+              ...calendarData,
+              [`${cycle.id}_index`]: i
+            });
+            timestamp -= duration;
+          }
         }
-      } else if (cycle.duration_seconds) {
-        timestamp += count * cycle.duration_seconds;
+      } else if (cycle.duration_ticks) {
+        timestamp += count * cycle.duration_ticks;
       }
       
-      // Process subdivisions to add partial cycle time
       if (cycle.subdivisions) {
         timestamp += this.calculateSubdivisionTime(
           cycle.subdivisions,
@@ -75,9 +79,8 @@ class CalendarSystem {
     for (const subdiv of subdivisions) {
       if (subdiv.type === 'uniform') {
         const count = calendarData[subdiv.id] || 0;
-        elapsed += count * subdiv.duration_seconds;
+        elapsed += count * subdiv.duration_ticks;
       } else if (subdiv.type === 'named_sequence') {
-        // Find which unit we're in
         const subdivisionName = calendarData[`${parentId}_subdivision`];
         const subdivisionIndex = calendarData[`${parentId}_subdivision_index`];
         
@@ -99,7 +102,7 @@ class CalendarSystem {
     if (cycle.duration_fn) {
       return this.countVariableCycles(cycle, remaining, context);
     } else {
-      const duration = cycle.duration_seconds;
+      const duration = cycle.duration_ticks;
       
       // Handle negative remainders properly with floor division
       let count, remainder;
@@ -130,7 +133,6 @@ class CalendarSystem {
     let accumulated = 0;
     
     if (remaining >= 0) {
-      // Positive: iterate forward through cycles
       while (true) {
         const duration = this.evaluateDurationFn(cycle.duration_fn, {
           ...context,
@@ -145,7 +147,6 @@ class CalendarSystem {
         count++;
       }
     } else {
-      // Negative: iterate backward through cycles
       while (true) {
         count--;
         const duration = this.evaluateDurationFn(cycle.duration_fn, {
@@ -154,7 +155,6 @@ class CalendarSystem {
         });
         
         if (accumulated - duration < remaining) {
-          // We've gone too far back, step forward one
           count++;
           break;
         }
@@ -175,9 +175,8 @@ class CalendarSystem {
     
     for (const subdiv of subdivisions) {
       if (subdiv.type === 'uniform') {
-        const duration = subdiv.duration_seconds;
+        const duration = subdiv.duration_ticks;
         
-        // Handle negative remainders
         let count, remainder;
         if (currentRemaining >= 0) {
           count = Math.floor(currentRemaining / duration);
@@ -207,7 +206,6 @@ class CalendarSystem {
 
   processNamedSequence(units, remaining, context) {
     if (remaining >= 0) {
-      // Forward iteration for positive remainders
       let accumulated = 0;
       
       for (let i = 0; i < units.length; i++) {
@@ -225,14 +223,12 @@ class CalendarSystem {
         accumulated += duration;
       }
       
-      // If we've gone through all units, return the last one
       return {
         name: units[units.length - 1].name,
         index: units.length - 1,
         remaining: remaining - accumulated
       };
     } else {
-      // Backward iteration for negative remainders
       let accumulated = 0;
       
       for (let i = units.length - 1; i >= 0; i--) {
@@ -250,7 +246,6 @@ class CalendarSystem {
         }
       }
       
-      // Return first unit if we've exhausted the list
       return {
         name: units[0].name,
         index: 0,
@@ -260,8 +255,8 @@ class CalendarSystem {
   }
 
   resolveDuration(unit, context) {
-    if (unit.duration_seconds !== undefined) {
-      return unit.duration_seconds;
+    if (unit.duration_ticks !== undefined) {
+      return unit.duration_ticks;
     }
     if (unit.duration_fn) {
       return this.evaluateDurationFn(unit.duration_fn, context);
@@ -271,7 +266,6 @@ class CalendarSystem {
 
   evaluateDurationFn(durationFn, context) {
     if (typeof durationFn === 'string') {
-      // Simple expression evaluation (e.g., "is_leap_year ? 2505600 : 2419200")
       return this.evaluateExpression(durationFn, context);
     }
     
@@ -280,11 +274,11 @@ class CalendarSystem {
       
       for (const condition of durationFn.conditions) {
         if (condition.default) {
-          return condition.duration_seconds;
+          return condition.duration_ticks;
         }
         
         if (this.evaluateCondition(condition.if, variable, context)) {
-          return condition.duration_seconds;
+          return condition.duration_ticks;
         }
       }
     }
@@ -293,14 +287,12 @@ class CalendarSystem {
   }
 
   evaluateCondition(conditionStr, value, context) {
-    // Handle leap year function calls
     if (conditionStr.includes('is_leap_year')) {
       const match = conditionStr.match(/is_leap_year\(([^)]+)\)/);
       if (match) {
         const yearExpr = match[1].trim();
         let year = value;
         
-        // Handle expressions like "year_index + n"
         if (yearExpr.includes('+')) {
           const parts = yearExpr.split('+');
           const base = parseInt(parts[1].trim());
@@ -311,7 +303,6 @@ class CalendarSystem {
       }
     }
     
-    // Simple condition evaluator for modulo operations
     // Format: "year % 400 == 0"
     const match = conditionStr.match(/(\w+)\s*%\s*(\d+)\s*==\s*(\d+)/);
     if (match) {
@@ -323,7 +314,6 @@ class CalendarSystem {
   }
 
   evaluateExpression(expr, context) {
-    // Handle leap year conditionals
     if (expr.includes('is_leap_year')) {
       const year = this.getYearFromContext(context);
       const isLeap = this.isLeapYear(year);
@@ -337,7 +327,6 @@ class CalendarSystem {
   }
 
   getYearFromContext(context) {
-    // Calculate actual year from year index
     const yearIndex = context.year_index !== undefined ? context.year_index : (context.year || 0);
     return yearIndex;
   }
@@ -350,7 +339,6 @@ class CalendarSystem {
   }
 
   getSortedCycles() {
-    // Sort cycles by estimated duration (largest first)
     return [...this.def.cycles].sort((a, b) => {
       const durationA = this.estimateCycleDuration(a);
       const durationB = this.estimateCycleDuration(b);
@@ -359,16 +347,14 @@ class CalendarSystem {
   }
 
   estimateCycleDuration(cycle) {
-    if (cycle.duration_seconds) {
-      return cycle.duration_seconds;
+    if (cycle.duration_ticks) {
+      return cycle.duration_ticks;
     }
-    // For variable cycles, use a heuristic
     if (cycle.id === 'year') return 31557600; // Average year
     if (cycle.id === '400year') return 12622780800;
     return 0;
   }
 
-  // Utility: Format calendar data as human-readable string
   formatCalendar(calendarData, format = 'full') {
     if (format === 'gregorian' && calendarData.year !== undefined) {
       const month = calendarData.year_subdivision || 'January';
@@ -385,11 +371,10 @@ class CalendarSystem {
   }
 }
 
-// Example: Gregorian Calendar Definition
 const gregorianCalendar = {
   name: "Gregorian Calendar",
   epoch: {
-    // timestamp: 62167219200,
+    // timestamp: 621672192000,
     timestamp: 0,
   },
   cycles: [
@@ -399,45 +384,45 @@ const gregorianCalendar = {
         type: "conditional",
         variable: "year_index",
         conditions: [
-          { if: "is_leap_year(year_index)", duration_seconds: 31622400 }, // 366 days
-          { default: true, duration_seconds: 31536000 } // 365 days
+          { if: "is_leap_year(year_index)", duration_ticks: 316224000 }, // 366 days
+          { default: true, duration_ticks: 315360000 } // 365 days
         ]
       },
       subdivisions: [
         {
           type: "named_sequence",
           units: [
-            { name: "January", duration_seconds: 2678400 }, // 31 days
-            { name: "February", duration_fn: "is_leap_year ? 2505600 : 2419200" }, // 29 or 28 days
-            { name: "March", duration_seconds: 2678400 },
-            { name: "April", duration_seconds: 2592000 }, // 30 days
-            { name: "May", duration_seconds: 2678400 },
-            { name: "June", duration_seconds: 2592000 },
-            { name: "July", duration_seconds: 2678400 },
-            { name: "August", duration_seconds: 2678400 },
-            { name: "September", duration_seconds: 2592000 },
-            { name: "October", duration_seconds: 2678400 },
-            { name: "November", duration_seconds: 2592000 },
-            { name: "December", duration_seconds: 2678400 }
+            { name: "January", duration_ticks: 26784000 }, // 31 days
+            { name: "February", duration_fn: "is_leap_year ? 25056000 : 24192000" }, // 29 or 28 days
+            { name: "March", duration_ticks: 26784000 },
+            { name: "April", duration_ticks: 25920000 }, // 30 days
+            { name: "May", duration_ticks: 26784000 },
+            { name: "June", duration_ticks: 25920000 },
+            { name: "July", duration_ticks: 26784000 },
+            { name: "August", duration_ticks: 26784000 },
+            { name: "September", duration_ticks: 25920000 },
+            { name: "October", duration_ticks: 26784000 },
+            { name: "November", duration_ticks: 25920000 },
+            { name: "December", duration_ticks: 26784000 }
           ]
         }
       ]
     },
     {
       id: "day",
-      duration_seconds: 86400,
+      duration_ticks: 864000,
     },
     {
       id: "hour",
-      duration_seconds: 3600,
+      duration_ticks: 36000,
     },
     {
       id: "minute",
-      duration_seconds: 60,
+      duration_ticks: 600,
     },
     {
       id: "second",
-      duration_seconds: 1,
+      duration_ticks: 10,
     },
   ]
 };
@@ -451,23 +436,23 @@ const decimalCalendar = {
   cycles: [
     {
       id: "megaday",
-      duration_seconds: 86400000, // 1000 days
+      duration_ticks: 86400000, // 1000 days
       subdivisions: [
-        { type: "uniform", id: "kiloday", count: 1000, duration_seconds: 86400 }
+        { type: "uniform", id: "kiloday", count: 1000, duration_ticks: 86400 }
       ]
     },
     {
       id: "kiloday",
-      duration_seconds: 86400,
+      duration_ticks: 86400,
       subdivisions: [
-        { type: "uniform", id: "centiday", count: 100, duration_seconds: 864 }
+        { type: "uniform", id: "centiday", count: 100, duration_ticks: 864 }
       ]
     },
     {
       id: "centiday",
-      duration_seconds: 864,
+      duration_ticks: 864,
       subdivisions: [
-        { type: "uniform", id: "deciday", count: 10, duration_seconds: 86.4 }
+        { type: "uniform", id: "deciday", count: 10, duration_ticks: 86.4 }
       ]
     }
   ]
@@ -521,7 +506,7 @@ const converted = greg.calendarToTimestamp(calRep);
 console.log("Original timestamp:", original);
 console.log("Calendar representation:", calRep);
 console.log("Converted back:", converted);
-console.log("Difference:", converted - original, "seconds");
+console.log("Difference:", converted - original, "ticks");
 console.log("Match:", Math.abs(converted - original) < 60); // Allow small rounding
 
 // Test round-trip with leap day
@@ -532,7 +517,7 @@ console.log("Original leap day timestamp:", leapDayOriginal);
 console.log("Calendar representation:", leapDayRep);
 const leapDayConverted = greg.calendarToTimestamp(leapDayRep);
 console.log("Converted back:", leapDayConverted);
-console.log("Difference:", leapDayConverted - leapDayOriginal, "seconds");
+console.log("Difference:", leapDayConverted - leapDayOriginal, "ticks");
 
 // Test round-trip with different months
 console.log("\n=== Different Month Tests ===");
@@ -547,7 +532,7 @@ testDates.forEach(dateStr => {
   const ts = Math.floor(new Date(dateStr).getTime() / 1000);
   const cal = greg.timestampToCalendar(ts);
   const back = greg.calendarToTimestamp(cal);
-  console.log(`${dateStr}: diff = ${back - ts} seconds, month = ${cal.year_subdivision}`);
+  console.log(`${dateStr}: diff = ${back - ts} ticks, month = ${cal.year_subdivision}`);
 });
 
 // Additional leap year tests
@@ -588,5 +573,5 @@ negativeTests.forEach(ts => {
   const cal = greg.timestampToCalendar(ts);
   const back = greg.calendarToTimestamp(cal);
   const date = new Date(ts * 1000).toISOString();
-  console.log(`${date}: diff = ${back - ts} seconds`);
+  console.log(`${date}: diff = ${back - ts} ticks`);
 });
