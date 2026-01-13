@@ -1,6 +1,7 @@
 class CalendarSystem {
   constructor(definition) {
     this.def = definition;
+    this.functions = definition.functions || {};
   }
 
   timestampToCalendar(timestamp) {
@@ -27,7 +28,7 @@ class CalendarSystem {
       }
     }
 
-    if (elapsed < 0) result[cycles[0].id] -= 1; // Adjust for negative timestamps
+    if (elapsed < 0) result[cycles[0].id] -= 1;
     
     return result;
   }
@@ -81,11 +82,9 @@ class CalendarSystem {
         const count = calendarData[subdiv.id] || 0;
         elapsed += count * subdiv.duration_ticks;
       } else if (subdiv.type === 'named_sequence') {
-        const subdivisionName = calendarData[`${parentId}_subdivision`];
         const subdivisionIndex = calendarData[`${parentId}_subdivision_index`];
         
         if (subdivisionIndex !== undefined) {
-          // Sum up all complete units before the current one
           for (let i = 0; i < subdivisionIndex; i++) {
             const unit = subdiv.units[i];
             const duration = this.resolveDuration(unit, calendarData);
@@ -104,17 +103,14 @@ class CalendarSystem {
     } else {
       const duration = cycle.duration_ticks;
       
-      // Handle negative remainders properly with floor division
       let count, remainder;
       if (remaining >= 0) {
         count = Math.floor(remaining / duration);
         remainder = remaining % duration;
       } else {
-        // For negative values, we need to ensure the remainder is positive
         count = Math.floor(remaining / duration);
         remainder = remaining - (count * duration);
         
-        // If remainder is negative, borrow from count
         if (remainder < 0) {
           count -= 1;
           remainder += duration;
@@ -265,7 +261,7 @@ class CalendarSystem {
   }
 
   evaluateDurationFn(durationFn, context) {
-    if (typeof durationFn === 'string') {
+    if (typeof durationFn === 'object' && durationFn.type === 'expression') {
       return this.evaluateExpression(durationFn, context);
     }
     
@@ -286,55 +282,98 @@ class CalendarSystem {
     return 0;
   }
 
-  evaluateCondition(conditionStr, value, context) {
-    if (conditionStr.includes('is_leap_year')) {
-      const match = conditionStr.match(/is_leap_year\(([^)]+)\)/);
-      if (match) {
-        const yearExpr = match[1].trim();
-        let year = value;
-        
-        if (yearExpr.includes('+')) {
-          const parts = yearExpr.split('+');
-          const base = parseInt(parts[1].trim());
-          year = value + base;
-        }
-        
-        return this.isLeapYear(year);
-      }
+  evaluateCondition(condition, value, context) {
+    if (condition.type === 'function_call') {
+      const args = this.resolveArguments(condition.args, value, context);
+      return this.callFunction(this.functions[condition.function], args, context);
     }
     
-    // Format: "year % 400 == 0"
-    const match = conditionStr.match(/(\w+)\s*%\s*(\d+)\s*==\s*(\d+)/);
-    if (match) {
-      const divisor = parseInt(match[2]);
-      const expected = parseInt(match[3]);
-      return (value % divisor) === expected;
+    if (condition.type === 'modulo') {
+      const val = this.resolveValue(condition.value, value, context);
+      return (val % condition.divisor) === condition.equals;
     }
+    
+    if (condition.type === 'and') {
+      return condition.conditions.every(c => this.evaluateCondition(c, value, context));
+    }
+    
+    if (condition.type === 'or') {
+      return condition.conditions.some(c => this.evaluateCondition(c, value, context));
+    }
+    
+    if (condition.type === 'not') {
+      return !this.evaluateCondition(condition.condition, value, context);
+    }
+    
     return false;
   }
 
   evaluateExpression(expr, context) {
-    if (expr.includes('is_leap_year')) {
-      const year = this.getYearFromContext(context);
-      const isLeap = this.isLeapYear(year);
-      const parts = expr.split('?');
-      if (parts.length === 2) {
-        const [truePart, falsePart] = parts[1].split(':');
-        return isLeap ? parseInt(truePart.trim()) : parseInt(falsePart.trim());
+    if (expr.type === 'expression' && expr.operator === 'ternary') {
+      const conditionResult = this.evaluateCondition(expr.condition, 0, context);
+      return conditionResult ? expr.true_value : expr.false_value;
+    }
+    
+    return 0;
+  }
+
+  resolveArguments(args, defaultValue, context) {
+    if (!args || args.length === 0) return [defaultValue];
+    
+    return args.map(arg => this.resolveValue(arg, defaultValue, context));
+  }
+
+  resolveValue(value, defaultValue, context) {
+    if (typeof value === 'number') {
+      return value;
+    }
+    
+    if (typeof value === 'object') {
+      if (value.type === 'variable') {
+        return context[value.name] !== undefined ? context[value.name] : defaultValue;
+      }
+      
+      if (value.type === 'add') {
+        const left = this.resolveValue(value.left, defaultValue, context);
+        const right = this.resolveValue(value.right, defaultValue, context);
+        return left + right;
+      }
+      
+      if (value.type === 'subtract') {
+        const left = this.resolveValue(value.left, defaultValue, context);
+        const right = this.resolveValue(value.right, defaultValue, context);
+        return left - right;
       }
     }
-    return parseInt(expr);
+    
+    return defaultValue;
   }
 
-  getYearFromContext(context) {
-    const yearIndex = context.year_index !== undefined ? context.year_index : (context.year || 0);
-    return yearIndex;
-  }
-
-  isLeapYear(year) {
-    if (year % 400 === 0) return true;
-    if (year % 100 === 0) return false;
-    if (year % 4 === 0) return true;
+  callFunction(functionDef, args, context) {
+    if (functionDef.type === 'leap_year') {
+      const year = args[0];
+      
+      // Apply all rules in order
+      for (const rule of functionDef.rules) {
+        const val = this.resolveValue(rule.value, year, { ...context, year });
+        
+        if (rule.condition.type === 'modulo') {
+          if ((val % rule.condition.divisor) === rule.condition.equals) {
+            return rule.result;
+          }
+        }
+      }
+      
+      return false;
+    }
+    
+    if (functionDef.type === 'cycle_position') {
+      const value = args[0];
+      const cycleLength = functionDef.cycle_length;
+      const position = ((value % cycleLength) + cycleLength) % cycleLength;
+      return functionDef.positions.includes(position);
+    }
+    
     return false;
   }
 
@@ -350,8 +389,9 @@ class CalendarSystem {
     if (cycle.duration_ticks) {
       return cycle.duration_ticks;
     }
-    if (cycle.id === 'year') return 31557600; // Average year
-    if (cycle.id === '400year') return 12622780800;
+    if (cycle.estimated_duration_ticks) {
+      return cycle.estimated_duration_ticks; // TODO
+    }
     return 0;
   }
 
@@ -372,58 +412,104 @@ class CalendarSystem {
 }
 
 const gregorianCalendar = {
-  name: "Gregorian Calendar",
-  epoch: {
-    // timestamp: 621672192000,
-    timestamp: 0,
+  "name": "Gregorian Calendar",
+  "epoch": {
+    // "timestamp": 0,
+    "timestamp": 621672192000,
   },
-  cycles: [
+  "functions": {
+    "is_leap_year": {
+      "type": "leap_year",
+      "rules": [
+        {
+          "condition": { "type": "modulo", "divisor": 400, "equals": 0 },
+          "value": { "type": "variable", "name": "year_index" },
+          "result": true
+        },
+        {
+          "condition": { "type": "modulo", "divisor": 100, "equals": 0 },
+          "value": { "type": "variable", "name": "year_index" },
+          "result": false
+        },
+        {
+          "condition": { "type": "modulo", "divisor": 4, "equals": 0 },
+          "value": { "type": "variable", "name": "year_index" },
+          "result": true
+        }
+      ]
+    }
+  },
+  "cycles": [
     {
-      id: "year",
-      duration_fn: {
-        type: "conditional",
-        variable: "year_index",
-        conditions: [
-          { if: "is_leap_year(year_index)", duration_ticks: 316224000 }, // 366 days
-          { default: true, duration_ticks: 315360000 } // 365 days
+      "id": "year",
+      "estimated_duration_ticks": 315360000,
+      "duration_fn": {
+        "type": "conditional",
+        "variable": "year_index",
+        "conditions": [
+          {
+            "if": {
+              "type": "function_call",
+              "function": "is_leap_year",
+              "args": [{ "type": "variable", "name": "year_index" }]
+            },
+            "duration_ticks": 316224000
+          },
+          {
+            "default": true,
+            "duration_ticks": 315360000
+          }
         ]
       },
-      subdivisions: [
+      "subdivisions": [
         {
-          type: "named_sequence",
-          units: [
-            { name: "January", duration_ticks: 26784000 }, // 31 days
-            { name: "February", duration_fn: "is_leap_year ? 25056000 : 24192000" }, // 29 or 28 days
-            { name: "March", duration_ticks: 26784000 },
-            { name: "April", duration_ticks: 25920000 }, // 30 days
-            { name: "May", duration_ticks: 26784000 },
-            { name: "June", duration_ticks: 25920000 },
-            { name: "July", duration_ticks: 26784000 },
-            { name: "August", duration_ticks: 26784000 },
-            { name: "September", duration_ticks: 25920000 },
-            { name: "October", duration_ticks: 26784000 },
-            { name: "November", duration_ticks: 25920000 },
-            { name: "December", duration_ticks: 26784000 }
+          "type": "named_sequence",
+          "units": [
+            { "name": "January", "duration_ticks": 26784000 },
+            {
+              "name": "February",
+              "duration_fn": {
+                "type": "expression",
+                "operator": "ternary",
+                "condition": {
+                  "type": "function_call",
+                  "function": "is_leap_year",
+                  "args": [{ "type": "variable", "name": "year_index" }]
+                },
+                "true_value": 25056000,
+                "false_value": 24192000
+              }
+            },
+            { "name": "March", "duration_ticks": 26784000 },
+            { "name": "April", "duration_ticks": 25920000 },
+            { "name": "May", "duration_ticks": 26784000 },
+            { "name": "June", "duration_ticks": 25920000 },
+            { "name": "July", "duration_ticks": 26784000 },
+            { "name": "August", "duration_ticks": 26784000 },
+            { "name": "September", "duration_ticks": 25920000 },
+            { "name": "October", "duration_ticks": 26784000 },
+            { "name": "November", "duration_ticks": 25920000 },
+            { "name": "December", "duration_ticks": 26784000 }
           ]
         }
       ]
     },
     {
-      id: "day",
-      duration_ticks: 864000,
+      "id": "day",
+      "duration_ticks": 864000
     },
     {
-      id: "hour",
-      duration_ticks: 36000,
+      "id": "hour",
+      "duration_ticks": 36000
     },
     {
-      id: "minute",
-      duration_ticks: 600,
+      "id": "minute",
+      "duration_ticks": 600
     },
     {
-      id: "second",
-      duration_ticks: 10,
-    },
+      "id": "second",
+      "duration_ticks": 10
+    }
   ]
 };
 
@@ -431,147 +517,74 @@ const gregorianCalendar = {
 const decimalCalendar = {
   name: "Decimal Calendar",
   epoch: {
-    timestamp: 0,
+    timestamp: 621672192000,
   },
   cycles: [
     {
       id: "megaday",
-      duration_ticks: 86400000, // 1000 days
-      subdivisions: [
-        { type: "uniform", id: "kiloday", count: 1000, duration_ticks: 86400 }
-      ]
+      duration_ticks: 864000000000,
     },
     {
       id: "kiloday",
-      duration_ticks: 86400,
-      subdivisions: [
-        { type: "uniform", id: "centiday", count: 100, duration_ticks: 864 }
-      ]
+      duration_ticks: 864000000,
     },
     {
-      id: "centiday",
+      id: "day",
+      duration_ticks: 864000,
+    },
+    {
+      id: "milliday",
       duration_ticks: 864,
-      subdivisions: [
-        { type: "uniform", id: "deciday", count: 10, duration_ticks: 86.4 }
-      ]
-    }
+    },
   ]
 };
 
 // Usage Examples
-console.log("=== Gregorian Calendar ===");
+console.log("=== Gregorian Calendar (Pure JSON) ===");
 const greg = new CalendarSystem(gregorianCalendar);
 
-// Current time
-const now = Math.floor(Date.now() / 1000);
+const now = Math.floor(Date.now() / 100);
 console.log("Current timestamp:", now);
 console.log("Calendar representation:", greg.timestampToCalendar(now));
 console.log("Formatted:", greg.formatCalendar(greg.timestampToCalendar(now), 'gregorian'));
 
-// Specific date: 2024-03-15 14:30:00 (2024 is a leap year)
-const specificDate = Math.floor(new Date('2024-03-15T14:30:00Z').getTime() / 1000);
-console.log("\n2024-03-15 14:30:00 UTC (leap year):");
-console.log("Calendar:", greg.timestampToCalendar(specificDate));
-
-// Test leap year date: 2024-02-29 (leap day)
-const leapDay = Math.floor(new Date('2024-02-29T12:00:00Z').getTime() / 1000);
+// Test leap years
+const leapDay = Math.floor(new Date('2024-02-29T12:00:00Z').getTime() / 100);
 console.log("\n2024-02-29 12:00:00 UTC (leap day):");
 const leapDayCalendar = greg.timestampToCalendar(leapDay);
 console.log("Calendar:", leapDayCalendar);
 console.log("Formatted:", greg.formatCalendar(leapDayCalendar, 'gregorian'));
 
-// Test non-leap year: 2023-02-28
-const nonLeapYear = Math.floor(new Date('2023-02-28T12:00:00Z').getTime() / 1000);
-console.log("\n2023-02-28 12:00:00 UTC (non-leap year):");
-const nonLeapCalendar = greg.timestampToCalendar(nonLeapYear);
-console.log("Calendar:", nonLeapCalendar);
-console.log("Formatted:", greg.formatCalendar(nonLeapCalendar, 'gregorian'));
-
-// Test century year that IS a leap year: 2000-02-29
-const year2000 = Math.floor(new Date('2000-02-29T12:00:00Z').getTime() / 1000);
-console.log("\n2000-02-29 12:00:00 UTC (divisible by 400, IS leap):");
-const year2000Calendar = greg.timestampToCalendar(year2000);
-console.log("Calendar:", year2000Calendar);
-console.log("Is leap year 2000?", greg.isLeapYear(2000));
-
-console.log("\n=== Decimal Calendar ===");
-const decimal = new CalendarSystem(decimalCalendar);
-console.log("Current time in decimal:", decimal.timestampToCalendar(now));
-
-// Test round-trip conversion
+// Test round-trip
 console.log("\n=== Round-trip Test ===");
-const original = 1234567890;
-const calRep = greg.timestampToCalendar(original);
-const converted = greg.calendarToTimestamp(calRep);
-console.log("Original timestamp:", original);
-console.log("Calendar representation:", calRep);
-console.log("Converted back:", converted);
-console.log("Difference:", converted - original, "ticks");
-console.log("Match:", Math.abs(converted - original) < 60); // Allow small rounding
-
-// Test round-trip with leap day
-console.log("\n=== Leap Day Round-trip Test ===");
-const leapDayOriginal = Math.floor(new Date('2024-02-29T12:00:00Z').getTime() / 1000);
-const leapDayRep = greg.timestampToCalendar(leapDayOriginal);
-console.log("Original leap day timestamp:", leapDayOriginal);
-console.log("Calendar representation:", leapDayRep);
-const leapDayConverted = greg.calendarToTimestamp(leapDayRep);
-console.log("Converted back:", leapDayConverted);
-console.log("Difference:", leapDayConverted - leapDayOriginal, "ticks");
-
-// Test round-trip with different months
-console.log("\n=== Different Month Tests ===");
 const testDates = [
   '2024-01-15T10:30:00Z',
-  '2024-03-01T00:00:00Z',
-  '2024-06-30T23:59:59Z',
-  '2024-12-31T18:45:30Z'
+  '2024-02-29T12:00:00Z',
+  '2000-02-29T12:00:00Z',
+  '1900-03-01T00:00:00Z'
 ];
 
 testDates.forEach(dateStr => {
-  const ts = Math.floor(new Date(dateStr).getTime() / 1000);
+  const ts = Math.floor(new Date(dateStr).getTime() / 100);
   const cal = greg.timestampToCalendar(ts);
   const back = greg.calendarToTimestamp(cal);
-  console.log(`${dateStr}: diff = ${back - ts} ticks, month = ${cal.year_subdivision}`);
+  console.log(`${dateStr}: diff = ${back - ts} ticks (calculated as ${greg.formatCalendar(cal, 'gregorian')})`);
 });
 
-// Additional leap year tests
-console.log("\n=== Leap Year Tests ===");
-console.log("2000 is leap?", greg.isLeapYear(2000), "(YES - divisible by 400)");
-console.log("1900 is leap?", greg.isLeapYear(1900), "(NO - divisible by 100 but not 400)");
-console.log("2024 is leap?", greg.isLeapYear(2024), "(YES - divisible by 4)");
-console.log("2023 is leap?", greg.isLeapYear(2023), "(NO - not divisible by 4)");
+// Demonstrate JSON serialization
+console.log("\n=== JSON Serialization ===");
+const serialized = JSON.stringify(gregorianCalendar, null, 2);
+console.log("Calendar serialized to JSON (first 500 chars):");
+console.log(serialized.substring(0, 500) + "...");
 
-// Negative timestamp tests
-console.log("\n=== Negative Timestamp Tests (BCE dates) ===");
+// Deserialize and use
+const deserialized = JSON.parse(serialized);
+const greg2 = new CalendarSystem(deserialized);
+const testCal = greg2.timestampToCalendar(now);
+console.log("\nDeserialized calendar works:", testCal.year, testCal.year_subdivision);
 
-// 1969-12-31 23:00:00 (1 hour before epoch)
-const oneHourBefore = -3600;
-console.log("\n1 hour before epoch:");
-const oneHourCal = greg.timestampToCalendar(oneHourBefore);
-console.log("Calendar:", oneHourCal);
-console.log("Formatted:", greg.formatCalendar(oneHourCal, 'gregorian'));
-
-// 1969-06-15 (several months before epoch)
-const juneNineteenSixtyNine = Math.floor(new Date('1969-06-15T12:00:00Z').getTime() / 1000);
-console.log("\n1969-06-15 12:00:00:");
-const june69Cal = greg.timestampToCalendar(juneNineteenSixtyNine);
-console.log("Calendar:", june69Cal);
-console.log("Month:", june69Cal.year_subdivision, "Day:", june69Cal.day, "Hour:", june69Cal.hour);
-
-// 1960-01-01 (10 years before epoch)
-const nineteenSixty = Math.floor(new Date('1960-01-01T00:00:00Z').getTime() / 1000);
-console.log("\n1960-01-01 00:00:00:");
-const sixtysCal = greg.timestampToCalendar(nineteenSixty);
-console.log("Calendar:", sixtysCal);
-console.log("Year:", sixtysCal.year + 1970, "Month:", sixtysCal.year_subdivision);
-
-// Test round-trip with negative timestamps
-console.log("\n=== Negative Timestamp Round-trip ===");
-const negativeTests = [oneHourBefore, juneNineteenSixtyNine, nineteenSixty];
-negativeTests.forEach(ts => {
-  const cal = greg.timestampToCalendar(ts);
-  const back = greg.calendarToTimestamp(cal);
-  const date = new Date(ts * 1000).toISOString();
-  console.log(`${date}: diff = ${back - ts} ticks`);
-});
+// Decimal Calendar Example
+console.log("\n=== Decimal Calendar (Pure JSON) ===");
+const decimal = new CalendarSystem(decimalCalendar);
+const decimalNow = decimal.timestampToCalendar(now);
+console.log("Current time in Decimal calendar:", decimalNow);
