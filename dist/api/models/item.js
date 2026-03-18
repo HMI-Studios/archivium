@@ -11,6 +11,7 @@ const editor_1 = require("../../lib/editor");
 const tiptapHelpers_1 = require("../../lib/tiptapHelpers");
 const utils_1 = require("../utils");
 const utils_2 = require("../../lib/utils");
+const embedding_1 = __importDefault(require("../../embedding"));
 function getQuery(selects = [], permsCond, whereConds, options = {}) {
     const query = new utils_1.QueryBuilder()
         .select('item.id')
@@ -762,6 +763,14 @@ class ItemAPI {
                 this.markUpdated(item.id, conn);
             }
         });
+        const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortname });
+        // TODO more type nonsense
+        if (universe.obj_data.semanticSearchEnabled) {
+            embedding_1.default.addJob({
+                type: 'check',
+                itemId: item.id,
+            });
+        }
         return item.id;
     }
     async insertMap(itemId, map, conn) {

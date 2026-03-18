@@ -342,6 +342,18 @@ CREATE TABLE maplocation (
   FOREIGN KEY (map_id) REFERENCES map (id) ON DELETE CASCADE
 );
 
+CREATE TABLE itemembeddedchunks (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  chunk_id VARCHAR(128) NOT NULL,
+  item_id INT NOT NULL,
+  scope VARCHAR(16) NOT NULL,
+  heading_path TEXT,
+  content TEXT,
+  token_count INT,
+  hash VARCHAR(64) NOT NULL,
+  FOREIGN KEY (item_id) REFERENCES item (id) ON DELETE CASCADE
+);
+
 CREATE TABLE authoruniverse (
   id INT NOT NULL AUTO_INCREMENT,
   universe_id INT NOT NULL,

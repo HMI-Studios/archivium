@@ -21,3 +21,12 @@ LEFT JOIN (
 ) AS comments ON comments.author_id = user.id
 GROUP BY user.id
 ORDER BY once, veri DESC, user.created_at;
+
+SELECT
+    universe.id, universe.title, universe.is_public, COUNT(item.id) AS items,
+    author.username AS author
+FROM universe
+LEFT JOIN item ON item.universe_id = universe.id
+LEFT JOIN user AS author ON author.id = universe.author_id
+GROUP BY universe.id
+ORDER BY is_public DESC, items DESC;

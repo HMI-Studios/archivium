@@ -1,4 +1,5 @@
 node_modules/
+qdrant_storage/
 
 .env
 

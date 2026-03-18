@@ -101,7 +101,7 @@ export class UniverseAPI {
     const permsQueryString = `${readOnlyQueryString}${(readOnlyQueryString && usrQueryString) ? ' OR ' : ''}${usrQueryString}`;
     const conditionString = conditions ? `WHERE ${conditions.strings.join(' AND ')}` : '';
     const queryString = `
-      SELECT 
+      SELECT
         universe.*,
         JSON_OBJECTAGG(author.id, author.username) AS authors,
         JSON_OBJECTAGG(author.id, au.permission_level) AS author_permissions,

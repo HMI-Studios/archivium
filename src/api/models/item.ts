@@ -7,6 +7,7 @@ import { IndexedDocument, indexedToJson, updateLinks } from '../../lib/tiptapHel
 import { BaseOptions, Cond, executeQuery, handleAsNull, parseData, perms, QueryBuilder, tierLimits, withTransaction } from '../utils';
 import { User } from './user';
 import { deepCompare } from '../../lib/utils';
+import embedder from '../../embedding';
 
 export type ItemOptions = BaseOptions & {
   type?: string,
@@ -957,6 +958,15 @@ export class ItemAPI {
         this.markUpdated(item.id, conn);
       }
     });
+
+    const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortname });
+    // TODO more type nonsense
+    if ((universe.obj_data as any).semanticSearchEnabled) {
+      embedder.addJob({
+        type: 'check',
+        itemId: item.id,
+      });
+    }
 
     return item.id;
   }

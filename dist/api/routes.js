@@ -4,12 +4,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = default_1;
-const config_1 = require("../config");
 const _1 = __importDefault(require("."));
-const logger_1 = __importDefault(require("../logger"));
-const utils_1 = require("./utils");
+const config_1 = require("../config");
+const embedding_1 = __importDefault(require("../embedding"));
 const errors_1 = require("../errors");
 const renderContent_1 = require("../lib/renderContent");
+const logger_1 = __importDefault(require("../logger"));
+const utils_1 = require("./utils");
 function default_1(app, upload) {
     class APIRoute {
         path;
@@ -379,6 +380,12 @@ function default_1(app, upload) {
                 }),
             }),
         ]),
+        new APIRoute('/semantic-search', {
+            GET: async (req) => embedding_1.default.search(req.session.user, {
+                ...req.query,
+                query: (req.query.q ?? ''),
+            }),
+        }),
         new APIRoute('/writable-items', {
             GET: async (req) => _1.default.item.getMany(req.session.user, null, utils_1.perms.WRITE),
         }),
