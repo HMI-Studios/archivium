@@ -32,6 +32,14 @@ const Link = TiptapLink.configure({
     };
   },
 
+  addAttributes() {
+    return {
+      href: {
+        parseHTML: element => element.getAttribute('data-href'),
+      }
+    }
+  },
+
   renderHTML({ HTMLAttributes }) {
     const resolved: ResolveResult = this.options.shorthandResolver(HTMLAttributes.href, this.options.context);
 
@@ -43,6 +51,7 @@ const Link = TiptapLink.configure({
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
         href,
         class: exists ? '' : 'link-broken',
+        'data-href': HTMLAttributes.href,
       }),
       0,
     ];

@@ -21,6 +21,13 @@ const Link = extension_link_1.default.configure({
             shorthandResolver: (s) => ({ href: s, pending: true }),
         };
     },
+    addAttributes() {
+        return {
+            href: {
+                parseHTML: element => element.getAttribute('data-href'),
+            }
+        };
+    },
     renderHTML({ HTMLAttributes }) {
         const resolved = this.options.shorthandResolver(HTMLAttributes.href, this.options.context);
         const href = resolved.href;
@@ -30,6 +37,7 @@ const Link = extension_link_1.default.configure({
             (0, core_1.mergeAttributes)(this.options.HTMLAttributes, HTMLAttributes, {
                 href,
                 class: exists ? '' : 'link-broken',
+                'data-href': HTMLAttributes.href,
             }),
             0,
         ];
