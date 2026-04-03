@@ -3,6 +3,7 @@ import { RouteHandler } from ".";
 import api from '../api';
 import { perms, Tier } from '../api/utils';
 import { ADDR_PREFIX } from '../config';
+import embedder from '../embedding';
 import { ModelError, RateLimitError } from "../errors";
 import logger from '../logger';
 import { universeLink } from '../templates';
@@ -51,8 +52,16 @@ export default {
       discussion_open: req.body.discussion_open === 'enabled',
     }
     try {
+      // TODO we need to fix this type nonsense...
+      const prevUniverse = await api.universe.getOne(req.session.user, { 'universe.shortname': req.params.universeShortname }, perms.READ);
+      const prevSemanticSearchSetting = (prevUniverse.obj_data as any).semanticSearchEnabled;
+
       const id = await api.universe.put(req.session.user, req.params.universeShortname, req.body);
       const universe = await api.universe.getOne(req.session.user, { 'universe.id': id }, perms.READ);
+
+      if ((universe.obj_data as any).semanticSearchEnabled && !prevSemanticSearchSetting) {
+        embedder.enableEmbed(universe);
+      }
       if (req.body.next) {
         res.redirect(req.body.next);
       } else {

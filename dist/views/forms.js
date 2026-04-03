@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const api_1 = __importDefault(require("../api"));
 const utils_1 = require("../api/utils");
 const config_1 = require("../config");
+const embedding_1 = __importDefault(require("../embedding"));
 const errors_1 = require("../errors");
 const logger_1 = __importDefault(require("../logger"));
 const templates_1 = require("../templates");
@@ -52,8 +53,14 @@ exports.default = {
             discussion_open: req.body.discussion_open === 'enabled',
         };
         try {
+            // TODO we need to fix this type nonsense...
+            const prevUniverse = await api_1.default.universe.getOne(req.session.user, { 'universe.shortname': req.params.universeShortname }, utils_1.perms.READ);
+            const prevSemanticSearchSetting = prevUniverse.obj_data.semanticSearchEnabled;
             const id = await api_1.default.universe.put(req.session.user, req.params.universeShortname, req.body);
             const universe = await api_1.default.universe.getOne(req.session.user, { 'universe.id': id }, utils_1.perms.READ);
+            if (universe.obj_data.semanticSearchEnabled && !prevSemanticSearchSetting) {
+                embedding_1.default.enableEmbed(universe);
+            }
             if (req.body.next) {
                 res.redirect(req.body.next);
             }
