@@ -854,6 +854,11 @@ button:disabled {
   display: flex;
 }
 
+.markdown aside>.img-container:not(:last-child),
+.markdown aside>.iframe-wrapper:not(:last-child) {
+    margin-bottom: 0.25rem;
+}
+
 .markdown aside :is(h1, h2, h3, h4, h5, h6) {
   padding-left: 0.25rem;
 }
