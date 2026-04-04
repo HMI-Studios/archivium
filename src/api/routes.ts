@@ -357,6 +357,17 @@ export default function (app: Express, upload: Multer) {
         ]),
       ]),
     ]),
+    new APIRoute('/images', {}, [
+      new APIRoute('/:id', {
+        GET: (req, res) => api.image.get(req.session.user, Number(req.params.id))
+          .then((image) => {
+            if (!image) return;
+            res.contentType(image.mimetype);
+            if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
+            return image.data;
+          }),
+      }),
+    ]),
     new APIRoute('/writable-items', {
       GET: async (req) => api.item.getMany(req.session.user, null, perms.WRITE),
     }),
