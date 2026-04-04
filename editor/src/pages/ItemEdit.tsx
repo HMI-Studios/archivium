@@ -297,8 +297,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     ...customTabs,
     body: (
       <EditorFrame
-        id='main-editor' editor={editor} getLink={async (previousUrl, type) => {
-          const url = window.prompt('URL', previousUrl);
+        id='main-editor'
+        editor={editor}
+        getLink={async (url, type) => {
           if (url?.startsWith('@')) {
             if (type === 'link') {
               const link = extractLinkData(url);
@@ -329,9 +330,17 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
                 }
               }
             }
+          } else if (type === 'videoembed') {
+            const urlObj = new URL(url);
+            if (urlObj.origin === 'https://www.youtube.com' && urlObj.searchParams.get('v')) {
+              return [`https://www.youtube.com/embed/${urlObj.searchParams.get('v')}`];
+            }
           }
           return [url];
         }}
+        itemMap={itemMap}
+        categories={categories}
+        gallery={item.gallery}
       />
     ),
     gallery: (

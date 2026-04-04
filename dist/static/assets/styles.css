@@ -294,7 +294,7 @@ header {
   .type-card-container {
     margin-right: 0;
     margin-left: 0;
-  }  
+  }
 }
 
 .card-list {
@@ -312,7 +312,7 @@ header {
 @media only screen and (max-device-width: 480px) {
   .story-list {
     grid-template-columns: 1fr;
-  }  
+  }
 }
 
 .card {
@@ -671,7 +671,7 @@ button:disabled {
   color: #888;
   border-color: #ddd;
 }
- 
+
 .inputGroup {
   display: grid;
   align-items: center;
@@ -679,10 +679,38 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.inputGroup.narrow {
+  grid-template-columns: 2fr 3fr;
+}
+
 @media only screen and (max-device-width: 480px) {
   .inputGroup {
     grid-template-columns: 1fr 2fr;
   }
+}
+
+.small-image-grid {
+  max-width: 50vw;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media only screen and (max-device-width: 480px) {
+  .small-image-grid {
+    max-width: none;
+  }
+}
+
+.small-image-grid img {
+  height: 6rem;
+  border: 0.125rem solid var(--button-border-color);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.small-image-grid img:hover {
+    box-shadow: var(--button-border-color) 0 0 0.5rem;
 }
 
 /* TODO: These styles are not great, but will do for now as we intend to drop support for EasyMDE */
@@ -1228,11 +1256,11 @@ input:checked + .slider:before {
     width: 96px;
     height: 48px;
   }
-  
+
   .slider {
     border-radius: 48px;
   }
-  
+
   .slider:before {
     position: absolute;
     content: "";
@@ -1241,7 +1269,7 @@ input:checked + .slider:before {
     left: 6px;
     bottom: 6px;
   }
-  
+
   input:checked + .slider:before {
     -webkit-transform: translateX(48px);
     -ms-transform: translateX(48px);
