@@ -1,4 +1,5 @@
-import { useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
+import { createPortal } from 'react-dom';
 
 type SearchableSelectProps = {
   id?: string,
@@ -13,6 +14,48 @@ type SearchableSelectProps = {
 export default function SearchableSelect({ id, value, options, onSelect, groups, groupPriority, clearText }: SearchableSelectProps) {
   const [searchText, setSearchText] = useState<string>('');
   const [dropdownVisible, setDropdownVisible] = useState<boolean>(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownPos, setDropdownPos] = useState({
+    top: 0,
+    left: 0,
+    width: 0,
+  });
+
+  useEffect(() => {
+    if (!dropdownVisible || !inputRef.current) return;
+
+    const rect = inputRef.current.getBoundingClientRect();
+
+    setDropdownPos({
+      top: rect.bottom,
+      left: rect.left,
+      width: rect.width,
+    });
+
+    const handleScroll = (e: Event) => {
+      const target = e.target as Node;
+
+      if (dropdownRef.current?.contains(target)) return;
+
+      setDropdownVisible(false);
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (inputRef.current?.contains(target) || dropdownRef.current?.contains(target)) return;
+      setDropdownVisible(false);
+    };
+
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('mousedown', handleClick);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('mousedown', handleClick);
+    };
+  }, [dropdownVisible]);
 
   groups = groups ?? {};
   groupPriority = groupPriority ?? {};
@@ -32,6 +75,7 @@ export default function SearchableSelect({ id, value, options, onSelect, groups,
       e.stopPropagation();
       onSelect(key);
       setDropdownVisible(false);
+      setSearchText('');
     }}>{key === null ? clearText : options[key]}</div>;
   };
 
@@ -49,15 +93,35 @@ export default function SearchableSelect({ id, value, options, onSelect, groups,
 
   return <div id={id} className='searchable-select'>
     <input
+      ref={inputRef}
       value={dropdownVisible ? searchText : value && options[value] || ''}
       onChange={({ target }) => setSearchText(target.value)}
       onFocus={() => setDropdownVisible(true)}
-      onBlur={() => setTimeout(() => setDropdownVisible(false), 100)} // Timeout to allow click event to register
+      onClick={() => setDropdownVisible(true)}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter') return;
+        if (filteredOptions.length === 1) {
+          onSelect(filteredOptions[0]);
+          setDropdownVisible(false);
+          setSearchText('');
+        }
+      }}
     />
-    <div className='options-container' style={{ display: dropdownVisible ? 'block' : 'none' }}>
-      {clearText && createOption(null)}
-      {ungroupedOptions.map((key) => createOption(key))}
-      {optionItems}
-    </div>
+    {dropdownVisible && createPortal(
+      <div
+        ref={dropdownRef}
+        className='options-container'
+        style={{
+          top: dropdownPos.top,
+          left: dropdownPos.left,
+          width: dropdownPos.width,
+        }}
+      >
+        {clearText && createOption(null)}
+        {ungroupedOptions.map((key) => createOption(key))}
+        {optionItems}
+      </div>,
+      document.body,
+    )}
   </div>;
 }
