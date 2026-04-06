@@ -1170,15 +1170,24 @@ header .badge {
 }
 
 .options-container {
-  /* display: none; */
   position: fixed;
   z-index: 999;
-  /* width: 100%; */
   max-height: 150px;
   overflow-y: auto;
   background-color: var(--sheet-color);
   border: 0.0625rem solid #ccc;
   box-sizing: border-box;
+}
+
+/*
+ * Since we currently support both the new and old versions of the searchable select,
+ * we need to have this special case to differentiate them.
+ * TODO remove this once all non-react searchable selects are gone!
+ */
+.searchable-select>.options-container {
+  display: none;
+  position: absolute;
+  width: 100%;
 }
 
 .options-container .option-group-heading {
