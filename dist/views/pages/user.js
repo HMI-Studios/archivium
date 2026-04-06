@@ -30,8 +30,7 @@ exports.default = {
             limit: 15,
             select: [['lub.username', 'last_updated_by']],
             join: [['LEFT', ['user', 'lub'], new utils_1.Cond('lub.id = item.last_updated_by')]],
-            where: new utils_1.Cond('item.author_id = ?', user.id)
-                .and(new utils_1.Cond('lub.id = ?', user.id).or('item.last_updated_by IS NULL')),
+            where: new utils_1.Cond('lub.id = ?', user.id).or('item.last_updated_by IS NULL'),
         });
         const items = await api_1.default.item.getByAuthorUsername(req.session.user, user.username, utils_1.perms.READ, {
             sort: 'updated_at',

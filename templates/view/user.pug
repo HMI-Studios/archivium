@@ -62,7 +62,7 @@ block content
       if !user.isContact && user.id !== contextUser.id
         |  - 
         a.link.link-animated( onclick=`addContact('${user.username}')` ) #{T('Add to contacts')}
-  
+
   hr
 
   h3 #{T('%s\'s universes', user.username)}
@@ -95,7 +95,7 @@ block content
                   | #{T('Owner')}
             td(data-sort=universe.created_at) #{formatDate(universe.created_at, true)}
             td(data-sort=universe.updated_at) #{formatDate(universe.updated_at, true)}
-  
+
   h3 #{T('%s\'s recent edits', user.username)}
   table.sheet.w-100
     thead
@@ -116,7 +116,7 @@ block content
             td(data-sort=item.universe)
               a.link.link-animated(href=`${universeLink(item.universe_short)}/`) #{item.universe}
             td(data-sort=item.updated_at) #{formatDate(item.updated_at, true)}
-  
+
   h3 #{T('%s\'s items', user.username)}
     small (
       a.link.link-animated(href=`${ADDR_PREFIX}/items?author=${user.username}`) #{T('see all')}
@@ -128,9 +128,9 @@ block content
       th.sortable #{T('Created')}
       th.sortable #{T('Updated')}
     tbody
-      if recentlyUpdated.length === 0
+      if items.length === 0
         tr
-          td(colspan=3) #{T('No updates.')}
+          td(colspan=3) #{T('% hasn\'t created any items.', user.username)}
       else
         each item in items
           tr
