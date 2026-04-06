@@ -12,7 +12,7 @@ class ContactAPI {
         if (!sessionUser)
             throw new errors_1.UnauthorizedError();
         const queryString = `
-      SELECT 
+      SELECT
         user.id,
         user.username,
         user.email,
@@ -26,8 +26,8 @@ class ContactAPI {
       FROM contact
       INNER JOIN user
       LEFT JOIN userimage AS ui ON user.id = ui.user_id
-      WHERE 
-        user.id <> ? 
+      WHERE
+        user.id <> ?
         AND (
           user.id = contact.requesting_user
           OR user.id = contact.accepting_user

@@ -4,12 +4,11 @@ div
       .sheet.d-flex.gap-4.align-start
         if comment.author_id
           +userIcon(commenters[comment.author_id])
-          //- img.userIcon.shrink-0(alt=commenters[comment.author_id].username, src=commenters[comment.author_id].pfpUrl)
         if comment.body
           .d-flex.flex-col.grow-1.overflow-hidden
             .d-flex.align-baseline
               if comment.author_id
-                a.link.link-animated(href=`/users/${commenters[comment.author_id].username}`) 
+                a.link.link-animated(href=`/users/${commenters[comment.author_id].username}`)
                   b #{commenters[comment.author_id].username}
               else
                 | #{T('Deleted User')}
@@ -49,7 +48,7 @@ div
         el.form.post.disabled = el.value.length > 2000;
       };
     });
-      
+
     document.querySelectorAll('.comment').forEach((el) => {
       loadMarkdown(el, '#{universeShortname}', el.dataset.val, null);
     });
