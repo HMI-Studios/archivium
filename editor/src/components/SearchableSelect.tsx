@@ -111,6 +111,7 @@ export default function SearchableSelect({ id, value, options, onSelect, groups,
       <div
         ref={dropdownRef}
         className='options-container'
+        data-select={id}
         style={{
           top: dropdownPos.top,
           left: dropdownPos.left,
