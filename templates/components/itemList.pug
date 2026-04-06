@@ -9,54 +9,112 @@
               |  #{capitalize(T(`${((universe.obj_data.cats || {})[type] || [, 'Missing Category'])[0]}`))}
             else
               |  #{T('Item')}
-  each item in items
-    -
-      const itemLink = systemDisplayModes.includes(displayUniverse)
-        ? `/${displayUniverse}/${item.shortname}`
-        : `${universeLink(item.universe_short)}/items/${item.shortname}`;
-    .card.sheet.gap-4.align-start(data-goto=itemLink)
-      .d-flex.flex-col.grow-1
-        h3.ma-0
-          a.link.link-animated(href=itemLink) #{item.title}
-        .d-flex.gap-1
-          a.filter.link.link-animated(
-            class={ 'link-selected': item.item_type == type }
-            data-filter-key='type'
-            data-filter-value=item.item_type
-            title='Filter by type'
-          ) #{capitalize(T(item.itemTypeName))}
-        if showUniverse
+  if layout === 'table'
+    script
+      include /static/scripts/table.js
+    div.scroll-x(style={ 'grid-column': '1 / 4' })
+      table.sheet.w-100
+        thead
+          th.sortable #{T('Name')}
+          th.sortable #{T('Type')}
+          if showUniverse
+            th.sortable #{T('Universe')}
+          th.sortable #{T('Author')}
+          th.sortable #{T('Created')}
+          th.sortable #{T('Updated')}
+          th #{T('Tags')}
+        tbody
+          each item in items
+            -
+              const itemLink = systemDisplayModes.includes(displayUniverse)
+                ? `/${displayUniverse}/${item.shortname}`
+                : `${universeLink(item.universe_short)}/items/${item.shortname}`;
+            tr
+              td(data-sort=item.title)
+                a.link.link-animated(href=itemLink) #{item.title}
+              td(data-sort=item.universe)
+                small
+                  a.filter.link.link-animated(
+                    class={ 'link-selected': item.item_type == type }
+                    data-filter-key='type'
+                    data-filter-value=item.item_type
+                    title='Filter by type'
+                  ) #{capitalize(T(item.itemTypeName))}
+              if showUniverse
+                td(data-sort=item.universe)
+                  small
+                    a.filter.link.link-animated(
+                      class={ 'link-selected': item.universe_short == universe }
+                      data-filter-key='universe'
+                      data-filter-value=item.universe_short
+                      title='Filter by universe'
+                    ) #{item.universe}
+              td(data-sort=item.author)
+                small
+                  if item.author
+                    a.link.link-animated(href=`${ADDR_PREFIX}/users/${item.author}`) #{item.author}
+                  else
+                    | #{T('Deleted User')}
+              td(data-sort=item.created_at)
+                small #{formatDate(item.created_at, true)}
+              td(data-sort=item.updated_at)
+                small #{formatDate(item.updated_at, true)}
+              td.d-flex.flex-wrap.gap-1
+                if item.tags
+                  each itemTag in item.tags
+                    if itemTag
+                      small
+                        a.filter.link.link-animated(class={ 'link-selected': itemTag == tag } data-filter-key='tag' data-filter-value=itemTag) ##{itemTag}
+
+  else
+    each item in items
+      -
+        const itemLink = systemDisplayModes.includes(displayUniverse)
+          ? `/${displayUniverse}/${item.shortname}`
+          : `${universeLink(item.universe_short)}/items/${item.shortname}`;
+      .card.sheet.gap-4.align-start(data-goto=itemLink)
+        .d-flex.flex-col.grow-1
+          h3.ma-0
+            a.link.link-animated(href=itemLink) #{item.title}
           .d-flex.gap-1
             a.filter.link.link-animated(
-              class={ 'link-selected': item.universe_short == universe }
-              data-filter-key='universe'
-              data-filter-value=item.universe_short
-              title='Filter by universe'
-            ) #{item.universe}
+              class={ 'link-selected': item.item_type == type }
+              data-filter-key='type'
+              data-filter-value=item.item_type
+              title='Filter by type'
+            ) #{capitalize(T(item.itemTypeName))}
+          if showUniverse
+            .d-flex.gap-1
+              a.filter.link.link-animated(
+                class={ 'link-selected': item.universe_short == universe }
+                data-filter-key='universe'
+                data-filter-value=item.universe_short
+                title='Filter by universe'
+              ) #{item.universe}
 
-      .d-flex.flex-col.grow-3
-          span 
-            b #{T('Author')}: 
-            if item.author
-              a.link.link-animated(href=`${ADDR_PREFIX}/users/${item.author}`) #{item.author}
-            else
-              | #{T('Deleted User')}
-          span 
-            b #{T('Created')}: 
-            | #{formatDate(item.created_at)}
-          span 
-            b #{T('Updated')}: 
-            | #{formatDate(item.updated_at)}
+        .d-flex.flex-col.grow-3
+            span
+              b #{T('Author')}: 
+              if item.author
+                a.link.link-animated(href=`${ADDR_PREFIX}/users/${item.author}`) #{item.author}
+              else
+                | #{T('Deleted User')}
+            span
+              b #{T('Created')}: 
+              | #{formatDate(item.created_at)}
+            span
+              b #{T('Updated')}: 
+              | #{formatDate(item.updated_at)}
 
-      .d-flex.flex-wrap.gap-1.grow-4
-        if item.tags
-          each itemTag in item.tags
-            if itemTag
-              a.filter.link.link-animated(class={ 'link-selected': itemTag == tag } data-filter-key='tag' data-filter-value=itemTag) ##{itemTag} 
+        .d-flex.flex-wrap.gap-1.grow-4
+          if item.tags
+            each itemTag in item.tags
+              if itemTag
+                a.filter.link.link-animated(class={ 'link-selected': itemTag == tag } data-filter-key='tag' data-filter-value=itemTag) ##{itemTag}
 
-      if item.snippet && search
-        .row-2(style={ 'grid-column': '1 / 3' })
-          small
-            i
-              - const snippet = item.snippet
-              +highlight(formatSnippet(snippet, item.match_pos >= 50, snippet.length === 100), search)
+        if item.snippet && search
+          .row-2(style={ 'grid-column': '1 / 3' })
+            small
+              i
+                - const snippet = item.snippet
+                +highlight(formatSnippet(snippet, item.match_pos >= 50, snippet.length === 100), search)

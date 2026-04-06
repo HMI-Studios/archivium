@@ -151,7 +151,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
       Promise.all([categoryPromise, eventItemPromise, itemMapPromise]).then(async () => {
         // The editor doesn't get created until the provider syncs, so we're guaranteed to be synced here
-        if (!ydoc.getMap('config').get('initialContentLoading') && editor) {
+        if (!ydoc.getMap('config').get('initialContentLoading')) {
           ydoc.getMap('config').set('initialContentLoading', true);
 
           await fetchData(`/api/universes/${universeShort}/items/${itemShort}`, async (data) => {

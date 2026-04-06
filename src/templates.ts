@@ -1,14 +1,13 @@
-import pug from 'pug';
 import { Request } from 'express';
-import { ADDR_PREFIX, VAPID_PUBLIC_KEY, DOMAIN, PROVIDER_ADDRESS } from './config';
-import { perms, getPfpUrl, tiers, plans, tierAllowance, handleAsNull } from './api/utils';
-import { locale, lang, sprintf, T } from './locale';
+import pug from 'pug';
 import api from './api';
-import path from 'path';
-import themes from './themes';
-import logger from './logger';
 import { ParsedUniverse } from './api/models/universe';
-import { NotFoundError } from './errors';
+import { getPfpUrl, handleAsNull, perms, plans, tierAllowance, tiers } from './api/utils';
+import { ADDR_PREFIX, DOMAIN, PROVIDER_ADDRESS, VAPID_PUBLIC_KEY } from './config';
+import { ForbiddenError, NotFoundError, UnauthorizedError } from './errors';
+import { lang, locale, sprintf, T } from './locale';
+import logger from './logger';
+import themes from './themes';
 
 export function universeLink(req: Request, uniShort) {
   const displayUniverse = req.headers['x-subdomain'];
@@ -42,7 +41,8 @@ async function contextData(req: Request) {
   const displayUniverse = req.headers['x-subdomain'];
   let contextUniverse: ParsedUniverse | null = null;
   if (displayUniverse) {
-    contextUniverse = await api.universe.getOne(user, { 'universe.shortname': displayUniverse }).catch(handleAsNull([NotFoundError]));
+    contextUniverse = await api.universe.getOne(user, { 'universe.shortname': displayUniverse })
+      .catch(handleAsNull([NotFoundError, UnauthorizedError, ForbiddenError]));
   }
 
   return {
@@ -87,7 +87,6 @@ const templates = {
   home: compile('templates/home.pug'),
   login: compile('templates/login.pug'),
   signup: compile('templates/signup.pug'),
-  markdownDemo: compile('templates/view/markdownDemo.pug'),
 
   universe: compile('templates/view/universe.pug'),
   editUniverse: compile('templates/edit/universe.pug'),

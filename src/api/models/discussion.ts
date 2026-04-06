@@ -82,11 +82,11 @@ export class DiscussionAPI {
   }
 
   /**
-   * 
-   * @param {*} user 
-   * @param {*} threadId 
-   * @param {*} validate 
-   * @param {*} inclCommenters 
+   *
+   * @param {*} user
+   * @param {*} threadId
+   * @param {*} validate
+   * @param {*} inclCommenters
    * @returns {Promise<[number, QueryResult, QueryResult?]>}
    */
   async getCommentsByThread(user: User | undefined, threadId: number, validate = true, inclCommenters = false): Promise<[Comment[], User[]?]> {
@@ -119,8 +119,8 @@ export class DiscussionAPI {
 
   /**
    * This assumes you have already validated access to the item!
-   * @param {*} itemId 
-   * @param {*} inclCommenters 
+   * @param {*} itemId
+   * @param {*} inclCommenters
    * @returns {Promise<[number, QueryResult, QueryResult?]>}
    */
   async getCommentsByItem(itemId: number, inclCommenters = false): Promise<[Comment[], User[]?]> {
@@ -132,10 +132,11 @@ export class DiscussionAPI {
     const comments = await executeQuery(queryString1, [itemId]) as Comment[];
     if (inclCommenters) {
       const queryString2 = `
-          SELECT user.id, user.username, user.email
+          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
           FROM user
           INNER JOIN comment ON user.id = comment.author_id
           INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
+          LEFT JOIN userimage AS ui ON user.id = ui.user_id
           WHERE ic.item_id = ?
           GROUP BY user.id`;
       const users = await executeQuery(queryString2, [itemId]) as User[];
@@ -146,8 +147,8 @@ export class DiscussionAPI {
 
   /**
    * This assumes you have already validated access to the chapter!
-   * @param {*} chapterId 
-   * @param {*} inclCommenters 
+   * @param {*} chapterId
+   * @param {*} inclCommenters
    * @returns {Promise<[number, QueryResult, QueryResult?]>}
    */
   async getCommentsByChapter(chapterId: number, inclCommenters = false): Promise<[Comment[], User[]?]> {
@@ -159,10 +160,11 @@ export class DiscussionAPI {
     const comments = await executeQuery(queryString1, [chapterId]) as Comment[];
     if (inclCommenters) {
       const queryString2 = `
-          SELECT user.id, user.username, user.email
+          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
           FROM user
           INNER JOIN comment ON user.id = comment.author_id
           INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
+          LEFT JOIN userimage AS ui ON user.id = ui.user_id
           WHERE scc.chapter_id = ?
           GROUP BY user.id`;
       const users = await executeQuery(queryString2, [chapterId]) as User[];

@@ -141,8 +141,8 @@ export class UserAPI {
 
   /**
    * returns a "safe" version of the user object with password data removed unless the includeAuth parameter is true
-   * @param {*} options 
-   * @param {boolean} includeAuth 
+   * @param {*} options
+   * @param {boolean} includeAuth
    * @returns {Promise<User>}
    */
   async getOne(options: any, includeAuth: boolean=false, includeNotifs=false): Promise<User> {

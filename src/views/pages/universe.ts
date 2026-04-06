@@ -20,13 +20,13 @@ export default {
         sortDesc: req.query.sort_order === 'desc',
       },
     );
-    res.prepareRender('universeList', { universes, search });
+    res.prepareRender('universeList', { universes, search, layout: req.query.layout });
   },
-  
+
   async create(_, res) {
     res.prepareRender('createUniverse');
   },
-  
+
   async view(req, res) {
     const user = req.session.user;
     const accessRequest = await api.universe.getUserAccessRequestIfExists(user, req.params.universeShortname).catch(() => null);
@@ -83,7 +83,7 @@ export default {
     const universe = {...fetchedUniverse, ...(req.body ?? {}), shortname: fetchedUniverse.shortname, newShort: req.body?.shortname ?? fetchedUniverse.shortname};
     res.prepareRender('editUniverse', { universe, error: res.error });
   },
- 
+
   async createDiscussionThread(req, res) {
     if (!req.session.user) throw new UnauthorizedError();
     const universe = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.READ);
@@ -92,7 +92,7 @@ export default {
     }
     res.prepareRender('createUniverseThread', { universe });
   },
-  
+
   async discussionThread(req, res) {
     const universe = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname });
     const threads = await api.discussion.getThreads(req.session.user, {
@@ -108,8 +108,8 @@ export default {
       delete user.email;
       commenters[user.id] = user;
     }
-    
-    res.prepareRender('universeThread', { 
+
+    res.prepareRender('universeThread', {
       universe, thread, comments, commenters,
       commentAction: `${universeLink(req, universe.shortname)}/discuss/${thread.id}/comment`,
     });
@@ -133,6 +133,7 @@ export default {
       type: req.query.type,
       tag: req.query.tag,
       search,
+      layout: req.query.layout,
     });
   },
 

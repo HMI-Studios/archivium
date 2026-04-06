@@ -55,11 +55,6 @@ exports.default = {
         }
         res.prepareRender('home', { universes: [] });
     },
-    /* Help Pages */
-    async markdownDemo(_, res) {
-        const content = (await promises_1.default.readFile('static/markdown_demo.md')).toString();
-        res.prepareRender('markdownDemo', { content });
-    },
     /* Note pages */
     async notes(req, res) {
         const user = req.session.user;

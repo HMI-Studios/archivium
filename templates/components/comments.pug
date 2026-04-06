@@ -4,12 +4,11 @@ div
       .sheet.d-flex.gap-4.align-start
         if comment.author_id
           +userIcon(commenters[comment.author_id])
-          //- img.userIcon.shrink-0(alt=commenters[comment.author_id].username, src=commenters[comment.author_id].pfpUrl)
         if comment.body
           .d-flex.flex-col.grow-1.overflow-hidden
             .d-flex.align-baseline
               if comment.author_id
-                a.link.link-animated(href=`/users/${commenters[comment.author_id].username}`) 
+                a.link.link-animated(href=`/users/${commenters[comment.author_id].username}`)
                   b #{commenters[comment.author_id].username}
               else
                 | #{T('Deleted User')}
@@ -37,6 +36,7 @@ div
         span.chars 2000
       div
         button#post(type='submit') #{T('Post Comment')}
+        input(type='hidden' name='tab')
       if error
         div
           span(style={ 'font-size': 'small' }).color-error #{T(error)}
@@ -49,7 +49,7 @@ div
         el.form.post.disabled = el.value.length > 2000;
       };
     });
-      
+
     document.querySelectorAll('.comment').forEach((el) => {
       loadMarkdown(el, '#{universeShortname}', el.dataset.val, null);
     });
@@ -58,4 +58,12 @@ div
       const apiRoute = `#{apiRoute}/${commentID}`;
       await deleteJSON(apiRoute);
       window.location.reload();
+    }
+
+    const form = document.querySelector('#post-comment');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        const query = new URLSearchParams(window.location.search);
+        form.tab.value = query.get('tab');
+      });
     }

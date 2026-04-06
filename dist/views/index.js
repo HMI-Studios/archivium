@@ -163,8 +163,6 @@ function default_1(app) {
     get('/privacy-policy', sites.ALL, [], pages_1.default.misc.privacyPolicy);
     get('/terms-of-service', sites.ALL, [], pages_1.default.misc.termsOfService);
     get('/code-of-conduct', sites.ALL, [], pages_1.default.misc.codeOfConduct);
-    /* Help Pages */
-    get('/markdown-demo', sites.ALL, [], pages_1.default.misc.markdownDemo);
     /* User Pages */
     get('/contacts', sites.ALL, [auth_1.default.verifySessionOrRedirect], pages_1.default.user.contactList);
     get('/users/:username', sites.ALL, [], pages_1.default.user.profilePage);

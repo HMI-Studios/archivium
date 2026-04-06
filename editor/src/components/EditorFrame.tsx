@@ -107,7 +107,6 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
     const previousSrc = editor.getAttributes('image').src;
 
     getLinkInput(previousSrc, 'image').then(([src, attrs]) => {
-      console.log(src)
       if (!src) {
         return;
       }

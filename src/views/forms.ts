@@ -84,7 +84,7 @@ export default {
     await api.discussion.postCommentToThread(req.session.user, Number(req.params.threadId), req.body);
     return res.redirect(`${universeLink(req, req.params.universeShortname)}/discuss/${req.params.threadId}#post-comment`);
   },
- 
+
   async createItem(req, res) {
     try {
       await api.item.post(req.session.user, {
@@ -103,7 +103,7 @@ export default {
 
   async commentOnItem(req, res) {
     await api.discussion.postCommentToItem(req.session.user, req.params.universeShortname, req.params.itemShortname, req.body);
-    res.redirect(`${universeLink(req, req.params.universeShortname)}/items/${req.params.itemShortname}?tab=comments#post-comment`);
+    res.redirect(`${universeLink(req, req.params.universeShortname)}/items/${req.params.itemShortname}?tab=${req.body.tab}#post-comment`);
   },
 
   async sponsorUniverse(req, res) {

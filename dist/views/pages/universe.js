@@ -15,7 +15,7 @@ exports.default = {
             sort: req.query.sort,
             sortDesc: req.query.sort_order === 'desc',
         });
-        res.prepareRender('universeList', { universes, search });
+        res.prepareRender('universeList', { universes, search, layout: req.query.layout });
     },
     async create(_, res) {
         res.prepareRender('createUniverse');
@@ -123,6 +123,7 @@ exports.default = {
             type: req.query.type,
             tag: req.query.tag,
             search,
+            layout: req.query.layout,
         });
     },
     async admin(req, res) {

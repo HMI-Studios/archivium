@@ -31,8 +31,7 @@ export default {
       limit: 15,
       select: [['lub.username', 'last_updated_by']],
       join: [['LEFT', ['user', 'lub'], new Cond('lub.id = item.last_updated_by')]],
-      where: new Cond('item.author_id = ?', user.id)
-        .and(new Cond('lub.id = ?', user.id).or('item.last_updated_by IS NULL')),
+      where: new Cond('lub.id = ?', user.id).or('item.last_updated_by IS NULL'),
     });
     const items = await api.item.getByAuthorUsername(req.session.user, user.username, perms.READ, {
       sort: 'updated_at',
@@ -52,7 +51,7 @@ export default {
       recentlyUpdated,
     });
   },
-  
+
   async settings(req, res) {
     const user = await api.user.getOne({ 'user.id': req.session.user?.id });
     const typeSettingData = await api.notification.getTypeSettings(user);

@@ -109,10 +109,11 @@ class DiscussionAPI {
         const comments = await (0, utils_1.executeQuery)(queryString1, [itemId]);
         if (inclCommenters) {
             const queryString2 = `
-          SELECT user.id, user.username, user.email
+          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
           FROM user
           INNER JOIN comment ON user.id = comment.author_id
           INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
+          LEFT JOIN userimage AS ui ON user.id = ui.user_id
           WHERE ic.item_id = ?
           GROUP BY user.id`;
             const users = await (0, utils_1.executeQuery)(queryString2, [itemId]);
@@ -135,10 +136,11 @@ class DiscussionAPI {
         const comments = await (0, utils_1.executeQuery)(queryString1, [chapterId]);
         if (inclCommenters) {
             const queryString2 = `
-          SELECT user.id, user.username, user.email
+          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
           FROM user
           INNER JOIN comment ON user.id = comment.author_id
           INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
+          LEFT JOIN userimage AS ui ON user.id = ui.user_id
           WHERE scc.chapter_id = ?
           GROUP BY user.id`;
             const users = await (0, utils_1.executeQuery)(queryString2, [chapterId]);

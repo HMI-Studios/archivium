@@ -14,19 +14,23 @@ block content
     include /static/scripts/listUtils.js
     include /static/scripts/fetchUtils.js
     include /static/scripts/searchUtils.js
-  
+
   h1.center Universes
-  .d-flex.align-center.scroll-x
+  .d-flex.align-center.flex-wrap.gap-2.row-gap-2
     label.mr-1.nowrap(for='sort')
-      b #{T('Sort by')}: 
-    select(id='sort' name='sort')
-      option(value='updated_at') #{T('Updated')}
-      option(value='created_at') #{T('Created')}
-      option(value='title') #{T('Title')}
-    select(id='sort_order' name='sort_order')
-      option(value='desc') #{T('Descending')}
-      option(value='asc') #{T('Ascending')}
+      b #{T('Sort by')}:
+    .d-flex.align-center
+      select(id='sort' name='sort')
+        option(value='updated_at') #{T('Updated')}
+        option(value='created_at') #{T('Created')}
+        option(value='title') #{T('Title')}
+      select(id='sort_order' name='sort_order')
+        option(value='desc') #{T('Descending')}
+        option(value='asc') #{T('Ascending')}
     .grow-1
+    form.flex-row.gap-0.multi-button
+      button(name='layout' type='submit' value='table' disabled=(layout === 'table')) #{T('Table')}
+      button(name='layout' type='submit' value='card' disabled=(layout !== 'table')) #{T('Cards')}
     form.flex-row.gap-0
       button(type='submit') &#x1F50E;&#xFE0E;
       input(id='search' name='search' value=search placeholder='Search...')

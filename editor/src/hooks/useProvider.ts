@@ -4,6 +4,7 @@ import { fetchAsync } from '../helpers';
 
 import md5 from 'md5';
 import * as Y from 'yjs';
+import { deepCompare } from '../../../src/lib/utils';
 
 export type DocUser = {
   clientId: number,
@@ -77,17 +78,26 @@ export function useProvider(url: string, name: string, ydoc: Y.Doc): [
 
   useEffect(() => {
     if (me && provider) {
-      if (incomingState.length === 1) {
+      if (incomingState.length <= 1) {
         // We're alone in the room, which means that either
         // 1. there are no other users, so we don't need to bother with this, or
         // 2. the provider hasn't synced yet, so we need to wait for that.
+        setUsers({});
+        setSelections({});
         return;
       }
       const newUsers: { [id: number]: DocUser } = {};
       const newSelections: { [id: number]: DocSelection } = {};
       const usedColors: { [color: string]: true } = {};
       for (const { clientId, user, selection } of incomingState) {
-        if (clientId === me.clientId || !user) continue;
+        // if (clientId === me.clientId || !user) continue;
+        if (!user) continue;
+        if (clientId === me.clientId) {
+          if (!deepCompare(me, user)) {
+            setTimeout(() => provider.setAwarenessField('user', me), 100);
+          }
+          continue;
+        }
         if (user.color) usedColors[user.color] = true;
         newUsers[clientId] = user;
         if (!selection) continue;
