@@ -28,11 +28,12 @@ export default {
       universe.obj_data = JSON.parse(universe.obj_data);
       return { ...cats, [universe.id]: universe.obj_data['cats'] };
     }, {});
+    const universe = req.query.universe ? await api.universe.getOne(req.session.user, { 'universe.shortname': req.query.universe }) : null;
     res.prepareRender('itemList', {
       items: items.map(item => ({ ...item, itemTypeName: ((universeCats[item.universe_id] ?? {})[item.item_type] ?? ['Missing Category'])[0] })),
       type: req.query.type,
       tag: req.query.tag,
-      universe: req.query.universe,
+      universe,
       author: req.query.author,
       showUniverse: true,
       search,
