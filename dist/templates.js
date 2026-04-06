@@ -7,13 +7,13 @@ exports.systemDisplayModes = void 0;
 exports.universeLink = universeLink;
 exports.render = render;
 const pug_1 = __importDefault(require("pug"));
-const config_1 = require("./config");
-const utils_1 = require("./api/utils");
-const locale_1 = require("./locale");
 const api_1 = __importDefault(require("./api"));
-const themes_1 = __importDefault(require("./themes"));
-const logger_1 = __importDefault(require("./logger"));
+const utils_1 = require("./api/utils");
+const config_1 = require("./config");
 const errors_1 = require("./errors");
+const locale_1 = require("./locale");
+const logger_1 = __importDefault(require("./logger"));
+const themes_1 = __importDefault(require("./themes"));
 function universeLink(req, uniShort) {
     const displayUniverse = req.headers['x-subdomain'];
     if (displayUniverse) {
@@ -46,7 +46,8 @@ async function contextData(req) {
     const displayUniverse = req.headers['x-subdomain'];
     let contextUniverse = null;
     if (displayUniverse) {
-        contextUniverse = await api_1.default.universe.getOne(user, { 'universe.shortname': displayUniverse }).catch((0, utils_1.handleAsNull)([errors_1.NotFoundError]));
+        contextUniverse = await api_1.default.universe.getOne(user, { 'universe.shortname': displayUniverse })
+            .catch((0, utils_1.handleAsNull)([errors_1.NotFoundError, errors_1.UnauthorizedError, errors_1.ForbiddenError]));
     }
     return {
         contextUser,
