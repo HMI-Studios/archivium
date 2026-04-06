@@ -1,5 +1,5 @@
 import { useState, type ChangeEventHandler } from 'react';
-import { handleFormBlur } from '../helpers';
+import { handleFormBlur, T } from '../helpers';
 import type { DocSelection, DocUser } from '../hooks/useProvider';
 
 export type FormTextAreaProps = {
@@ -32,24 +32,25 @@ export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwa
               newValues.splice(i, 1);
               onChange(newValues);
             }}>
-              {value}
+              #{value}
               <span className='material-symbols-outlined'>delete</span>
             </div>
           ))}
         </div>
         <input
+          id={id}
           value={newValue}
-          onChange={({ target }) => setNewValue(target.value)}
+          placeholder={T('New tags...')}
+          onChange={({ target }) => setNewValue(target.value.trim())}
           onKeyDown={(e) => {
-            console.log(e.key)
             if (e.key === 'Enter' || e.key === ' ') {
-              if (!uniqueValues || !values.includes(newValue.trim())) {
-                onChange([ ...values, newValue.trim() ]);
+              const formattedValue = newValue.slice(newValue.startsWith('#') ? 1 : 0);
+              if (formattedValue && (!uniqueValues || !values.includes(formattedValue))) {
+                onChange([ ...values, formattedValue ]);
               }
               setNewValue('');
             }
           }}
-          id={id}
           data-selection-controlled={id}
           onFocus={() => setAwareness({ selectedElement: id })}
           onBlur={({ relatedTarget }) => handleFormBlur(relatedTarget as HTMLElement, setAwareness)}
