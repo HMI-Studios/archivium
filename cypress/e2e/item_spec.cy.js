@@ -139,7 +139,7 @@ describe('Item spec', () => {
     cy.visit('/editor/universes/public-test-universe/items/cypress-character');
     cy.wait('@request');
 
-    cy.get('#tags').type('testing cypress');
+    cy.get('#tags').type('testing cypress ');
     cy.get('#preview-btn').click();
 
     cy.get('#tags>small').children().should('have.length', 2);
