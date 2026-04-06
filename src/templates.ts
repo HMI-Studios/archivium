@@ -87,7 +87,6 @@ const templates = {
   home: compile('templates/home.pug'),
   login: compile('templates/login.pug'),
   signup: compile('templates/signup.pug'),
-  markdownDemo: compile('templates/view/markdownDemo.pug'),
 
   universe: compile('templates/view/universe.pug'),
   editUniverse: compile('templates/edit/universe.pug'),

@@ -138,9 +138,6 @@ export default function(app: Express) {
   get('/terms-of-service', sites.ALL, [], pages.misc.termsOfService);
   get('/code-of-conduct', sites.ALL, [], pages.misc.codeOfConduct);
 
-  /* Help Pages */
-  get('/markdown-demo', sites.ALL, [], pages.misc.markdownDemo);
-
   /* User Pages */
   get('/contacts', sites.ALL, [Auth.verifySessionOrRedirect], pages.user.contactList);
   get('/users/:username', sites.ALL, [], pages.user.profilePage);
@@ -178,7 +175,7 @@ export default function(app: Express) {
   get('/stories/:shortname/create', sites.ALL, [Auth.verifySessionOrRedirect], pages.story.createChapter);
   get('/stories/:shortname/:index', sites.ALL, [], pages.story.viewChapter);
   get('/stories/:shortname/:index/delete', sites.ALL, [Auth.verifySessionOrRedirect], pages.story.deleteChapter);
-  
+
   get('/items', sites.NORMAL, [], pages.item.list);
 
   renderContext((req, res) => {
