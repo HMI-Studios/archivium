@@ -67,6 +67,7 @@ export function useProvider(url: string, name: string, ydoc: Y.Doc): [
   useEffect(() => {
     if (!provider) return;
     provider.setAwarenessField('user', me);
+    setTimeout(() => provider.setAwarenessField('user', me), 250);
   }, [me]);
 
   useEffect(() => {
