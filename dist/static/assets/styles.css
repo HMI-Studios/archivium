@@ -1317,14 +1317,46 @@ input:checked + .slider:before {
       border-color: var(--link-color);
     }
   }
-  
+
   .card:hover .radio:not(:disabled) {
     border-color: silver;
   }
-    
+
   .card:hover .radio:not(:disabled):checked {
     border-color: var(--link-color);
   }
+}
+
+/* Pill Lists */
+.pill-list {
+  padding: 0.375rem;
+  font-size: 1rem;
+  background-color: var(--sheet-color);
+  border: 0.0625rem solid var(--input-border-color);
+  border-radius: 0.25rem;
+}
+
+.pill-list>input {
+  border: none;
+  outline: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.pill-list .pill {
+  border-radius: 1rem;
+  border: 0.0625rem solid var(--input-border-color);
+  background-color: var(--page-color);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pill-list .pill>span {
+  font-size: 1rem;
+  margin-bottom: -0.125rem;
 }
 
 /* Loading Spinner */
