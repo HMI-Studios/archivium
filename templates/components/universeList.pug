@@ -6,15 +6,15 @@ mixin universeCard(universe)
       .d-flex.gap-1
 
     .d-flex.flex-col.grow-3(style='grid-column: 2 / 4;')
-      span 
+      span
         b #{T('Authors')}: 
         +authorList(universe.authors, universe.author_permissions)
       .d-flex.gap-2.flex-wrap
         span
           b #{T('Created')}: 
           | #{formatDate(universe.created_at, true)}
-        | — 
-        span 
+        | —
+        span
           b #{T('Updated')}: 
           | #{formatDate(universe.updated_at, true)}
         | —
@@ -24,6 +24,24 @@ mixin universeCard(universe)
           a.follow-btn.link.link-animated(data-following=universe.followers[contextUser.id] ? 'true' : 'false' data-universe-short=universe.shortname)
             | #{universe.followers[contextUser.id] ? T('Unfollow') : T('Follow')}
 
+mixin universeTableRow(universe)
+  tr
+    td(data-sort=universe.title)
+      a.link.link-animated(href=`${universeLink(universe.shortname)}/`) #{universe.title}
+    td
+      small
+        +authorList(universe.authors, universe.author_permissions)
+    td(data-sort=universe.created_at)
+      small #{formatDate(universe.created_at, true)}
+    td(data-sort=universe.updated_at)
+      small #{formatDate(universe.updated_at, true)}
+    td(data-sort=universe.public)
+      small #{universe.public ? T('Public') : T('Private')}
+    td(data-sort=universe.followers[contextUser.id])
+      small
+        a.follow-btn.link.link-animated(data-following=universe.followers[contextUser.id] ? 'true' : 'false' data-universe-short=universe.shortname)
+          | #{universe.followers[contextUser.id] ? T('Unfollow') : T('Follow')}
+
 .card-list
   if contextUser
     .card.sheet(data-goto=`${ADDR_PREFIX}/universes/create`)
@@ -31,14 +49,35 @@ mixin universeCard(universe)
         a.link.d-flex.justify-center(href=`${ADDR_PREFIX}/universes/create`)
           .navbarText.material-symbols-outlined.heavy.ma-0.pa-1.pr-0.grow-0(style={ 'font-size': '1.5rem' }) add
           .big-text.navbarText.pa-1.grow-0 #{T('New Universe')}
-    each universe in universes.filter(universe => (universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
-      +universeCard(universe)
-    each universe in universes.filter(universe => !(universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
-      +universeCard(universe)
+  if layout === 'table'
+    div.scroll-x(style={ 'grid-column': '1 / 4' })
+      table.sheet.w-100
+        thead
+          th.sortable #{T('Name')}
+          th #{T('Authors')}
+          th.sortable #{T('Created')}
+          th.sortable #{T('Updated')}
+          th.sortable #{T('Visibility')}
+          th.sortable #{T('Following')}
+        tbody
+          if contextUser
+            each universe in universes.filter(universe => (universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
+              +universeTableRow(universe)
+            each universe in universes.filter(universe => !(universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
+              +universeTableRow(universe)
+          else
+            each universe in universes
+              +universeTableRow(universe)
   else
-    each universe in universes
-      +universeCard(universe)
-  
+    if contextUser
+      each universe in universes.filter(universe => (universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
+        +universeCard(universe)
+      each universe in universes.filter(universe => !(universe.followers[contextUser.id] || universe.author_permissions[contextUser.id] >= perms.WRITE))
+        +universeCard(universe)
+    else
+      each universe in universes
+        +universeCard(universe)
+
   script.
     document.querySelectorAll('.follow-btn').forEach((followBtn) => {
       followBtn.addEventListener('click', async (e) => {

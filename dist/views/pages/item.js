@@ -36,6 +36,7 @@ exports.default = {
             author: req.query.author,
             showUniverse: true,
             search,
+            layout: req.query.layout,
         });
     },
     async create(req, res) {

@@ -5,7 +5,7 @@ function toggleFilter(key, value) {
   } else {
     url.searchParams.set(key, value);
   }
-  history.pushState(null, '', url);
+  history.pushState({ path: url.href }, '', url);
   location.reload();
 }
 
@@ -16,7 +16,7 @@ window.addEventListener('load', () => {
       toggleFilter(filter.dataset.filterKey, filter.dataset.filterValue);
     };
   });
-  
+
   const url = new URL(window.location);
   if (url.searchParams.has('sort')) {
     if (document.getElementById('sort')) document.getElementById('sort').value = url.searchParams.get('sort');
