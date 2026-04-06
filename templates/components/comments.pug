@@ -36,6 +36,7 @@ div
         span.chars 2000
       div
         button#post(type='submit') #{T('Post Comment')}
+        input(type='hidden' name='tab')
       if error
         div
           span(style={ 'font-size': 'small' }).color-error #{T(error)}
@@ -58,3 +59,9 @@ div
       await deleteJSON(apiRoute);
       window.location.reload();
     }
+
+    const form = document.querySelector('#post-comment');
+    form.addEventListener('submit', (e) => {
+      const query = new URLSearchParams(window.location.search);
+      form.tab.value = query.get('tab');
+    });

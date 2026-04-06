@@ -103,7 +103,7 @@ exports.default = {
     },
     async commentOnItem(req, res) {
         await api_1.default.discussion.postCommentToItem(req.session.user, req.params.universeShortname, req.params.itemShortname, req.body);
-        res.redirect(`${(0, templates_1.universeLink)(req, req.params.universeShortname)}/items/${req.params.itemShortname}?tab=comments#post-comment`);
+        res.redirect(`${(0, templates_1.universeLink)(req, req.params.universeShortname)}/items/${req.params.itemShortname}?tab=${req.body.tab}#post-comment`);
     },
     async sponsorUniverse(req, res) {
         const { session, params, body } = req;

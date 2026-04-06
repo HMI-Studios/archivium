@@ -48,7 +48,7 @@ export default function(app: Express) {
     };
     next();
   });
-  
+
 
   app.use(Theme);
 
@@ -219,7 +219,7 @@ export default function(app: Express) {
     get('/discuss/:threadId', sites.DISPLAY, [], subdomain(pages.universe.discussionThread, (sub) => ({ universeShortname: sub })));
     get('/upgrade', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.universe.upgrade, (sub) => ({ universeShortname: sub })));
     get('/admin', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.universe.admin, (sub) => ({ universeShortname: sub })));
-    
+
     get('/items', sites.DISPLAY, [], subdomain(pages.universe.itemList, (sub) => ({ universeShortname: sub })));
     get('/items/create', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.item.create, (sub) => ({ universeShortname: sub })));
     get('/items/:itemShortname', sites.DISPLAY, [], subdomain(pages.item.view, (sub) => ({ universeShortname: sub })));
@@ -233,7 +233,7 @@ export default function(app: Express) {
     post('/universes/:universeShortname/items/create', sites.NORMAL, [Auth.verifySessionOrRedirect], forms.createItem);
     post('/universes/:universeShortname/items/:itemShortname/edit', sites.NORMAL, [Auth.verifySessionOrRedirect], () => { throw new RequestError('This endpoint is deprecared.', { code: HttpStatusCode.Gone }) });
     post('/universes/:universeShortname/items/:itemShortname/comment', sites.NORMAL, [Auth.verifySessionOrRedirect], forms.commentOnItem);
-  
+
     post('/edit', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(forms.editUniverse, (sub) => ({ universeShortname: sub })));
     post('/discuss/create', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(forms.createUniverseThread, (sub) => ({ universeShortname: sub })));
     post('/discuss/:threadId/comment', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(forms.commentOnThread, (sub) => ({ universeShortname: sub })));

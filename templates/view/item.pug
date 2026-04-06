@@ -148,9 +148,9 @@ block content
       if dataType in item.obj_data && 'title' in item.obj_data[dataType]
         li.navbarBtn(data-tab=dataType)
           h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('${dataType}')`) #{item.obj_data[dataType].title}
-    if item.obj_data.comments
-      li.navbarBtn(data-tab='comments')
-        h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('comments')`) #{capitalize(T('comments'))}
+    //- if item.obj_data.comments
+    //-   li.navbarBtn(data-tab='comments')
+    //-     h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('comments')`) #{capitalize(T('comments'))}
     if item.obj_data.notes || (contextUser && universe.author_permissions[contextUser.id] >= perms.WRITE && notes.length > 0)
       li.navbarBtn(data-tab='notes')
         h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('notes')`) #{capitalize(T('notes'))}
@@ -202,7 +202,7 @@ block content
           .me {
             border: 0.25rem outset gold;
           }
-          
+
           .children-bar {
             position: absolute;
             top: 50%;
@@ -339,25 +339,6 @@ block content
                   else
                     label(class={ right: location.x <= 0.5, left: location.x > 0.5  }) #{location.title || 'Untitled Location'}
 
-    if item.obj_data.comments
-      .hidden(data-tab='comments')
-        -
-          const canComment = contextUser && universe.discussion_enabled && (
-            (universe.public && universe.discussion_open)
-            || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
-          );
-          const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;
-          const apiRoute = `/api/universes/${universe.shortname}/items/${item.shortname}/comments`;
-          const universeShortname = universe.shortname;
-        if !universe.discussion_enabled
-          .center
-            .ma-auto.my-2(style={ 'max-width': '32rem' })
-              small
-                i #{T(`Discussion and comments is disabled for ${universe.title}.`)}
-                  |  #{T('To allow leaving comments, enable discussion on the ')}
-                  a.link.link-animated(href=`${universeLink(universe.shortname)}/edit`) #{T('universe edit page')}.
-        include ../components/comments.pug
-
     if item.obj_data.notes || (contextUser && universe.author_permissions[contextUser.id] >= perms.WRITE && notes.length > 0)
       .hidden(data-tab='notes')
         if !item.obj_data.notes
@@ -374,6 +355,26 @@ block content
           .markdown !{renderedBody.content}
         else
           .markdown #{renderedBody.content}
+
+  if item.obj_data.comments
+    h2 #{T('Comments')}
+    div
+      -
+        const canComment = contextUser && universe.discussion_enabled && (
+          (universe.public && universe.discussion_open)
+          || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
+        );
+        const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;
+        const apiRoute = `/api/universes/${universe.shortname}/items/${item.shortname}/comments`;
+        const universeShortname = universe.shortname;
+      if !universe.discussion_enabled
+        .center
+          .ma-auto.my-2(style={ 'max-width': '32rem' })
+            small
+              i #{T(`Discussion and comments is disabled for ${universe.title}.`)}
+                |  #{T('To allow leaving comments, enable discussion on the ')}
+                a.link.link-animated(href=`${universeLink(universe.shortname)}/edit`) #{T('universe edit page')}.
+      include ../components/comments.pug
 
   script.
     (() => {
