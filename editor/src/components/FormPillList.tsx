@@ -15,6 +15,22 @@ export type FormTextAreaProps = {
 export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwareness, selectors }: FormTextAreaProps) => {
   const [newValue, setNewValue] = useState<string>('');
 
+  const handleNewValues = (newValues: string[]): void => {
+    const newFormattedValues: string[] = [];
+    for (const value of newValues) {
+      const formattedValue = value.slice(value.startsWith('#') ? 1 : 0);
+      if (uniqueValues && (values.includes(formattedValue) || newFormattedValues.includes(formattedValue))) {
+        continue;
+      }
+      if (formattedValue) {
+        newFormattedValues.push(formattedValue);
+      }
+    }
+    if (newFormattedValues.length > 0) {
+      onChange([ ...values, ...newFormattedValues ]);
+    }
+  };
+
   return (
     <div className='inputGroup'>
       <label htmlFor={id}>{title}:</label>
@@ -33,21 +49,25 @@ export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwa
               onChange(newValues);
             }}>
               #{value}
-              <span className='material-symbols-outlined'>delete</span>
+              <span className='material-symbols-outlined clickable'>delete</span>
             </div>
           ))}
         </div>
         <input
           id={id}
           value={newValue}
+          className='w-100'
           placeholder={T('New tags...')}
-          onChange={({ target }) => setNewValue(target.value.trim())}
+          onChange={(e) => {
+            const inputValue = e.target.value;
+            const newValues = inputValue.split(' ')
+            const remainder = newValues.pop() ?? '';
+            handleNewValues(newValues);
+            setNewValue(remainder);
+          }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              const formattedValue = newValue.slice(newValue.startsWith('#') ? 1 : 0);
-              if (formattedValue && (!uniqueValues || !values.includes(formattedValue))) {
-                onChange([ ...values, formattedValue ]);
-              }
+            if (e.key === 'Enter') {
+              handleNewValues([newValue])
               setNewValue('');
             }
           }}
