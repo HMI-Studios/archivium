@@ -352,6 +352,19 @@ function default_1(app, upload) {
                 ]),
             ]),
         ]),
+        new APIRoute('/images', {}, [
+            new APIRoute('/:id', {
+                GET: (req, res) => _1.default.image.get(req.session.user, Number(req.params.id))
+                    .then((image) => {
+                    if (!image)
+                        return;
+                    res.contentType(image.mimetype);
+                    if (req.query.download === '1')
+                        res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
+                    return image.data;
+                }),
+            }),
+        ]),
         new APIRoute('/writable-items', {
             GET: async (req) => _1.default.item.getMany(req.session.user, null, utils_1.perms.WRITE),
         }),

@@ -59,7 +59,7 @@ const ToC = Node.create<ToCOptions>({
   parseHTML() {
     return [{ tag: 'div#toc' }]
   },
-  
+
   renderHTML({ HTMLAttributes }) {
     if (this.options.context) {
       return [

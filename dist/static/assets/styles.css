@@ -294,7 +294,7 @@ header {
   .type-card-container {
     margin-right: 0;
     margin-left: 0;
-  }  
+  }
 }
 
 .card-list {
@@ -312,7 +312,7 @@ header {
 @media only screen and (max-device-width: 480px) {
   .story-list {
     grid-template-columns: 1fr;
-  }  
+  }
 }
 
 .card {
@@ -671,7 +671,7 @@ button:disabled {
   color: #888;
   border-color: #ddd;
 }
- 
+
 .inputGroup {
   display: grid;
   align-items: center;
@@ -679,10 +679,38 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.inputGroup.narrow {
+  grid-template-columns: 2fr 3fr;
+}
+
 @media only screen and (max-device-width: 480px) {
   .inputGroup {
     grid-template-columns: 1fr 2fr;
   }
+}
+
+.small-image-grid {
+  max-width: 50vw;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media only screen and (max-device-width: 480px) {
+  .small-image-grid {
+    max-width: none;
+  }
+}
+
+.small-image-grid img {
+  height: 6rem;
+  border: 0.125rem solid var(--button-border-color);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.small-image-grid img:hover {
+    box-shadow: var(--button-border-color) 0 0 0.5rem;
 }
 
 /* TODO: These styles are not great, but will do for now as we intend to drop support for EasyMDE */
@@ -854,6 +882,11 @@ button:disabled {
   display: flex;
 }
 
+.markdown aside>.img-container:not(:last-child),
+.markdown aside>.iframe-wrapper:not(:last-child) {
+    margin-bottom: 0.25rem;
+}
+
 .markdown aside :is(h1, h2, h3, h4, h5, h6) {
   padding-left: 0.25rem;
 }
@@ -894,6 +927,10 @@ button:disabled {
   padding: 0.75rem;
   margin: 0.75rem;
   overflow-x: auto;
+}
+
+.markdown > p:empty:last-child {
+  display: none; /* Hide empty trailing paragraph */
 }
 
 h4, h5 {
@@ -958,6 +995,10 @@ h4, h5 {
   top: -1.4em;
   user-select: none;
   white-space: nowrap;
+}
+
+.tiptap > p:last-child:has(> br:only-child) {
+  display: none; /* Hide empty trailing paragraph */
 }
 
 /* EasyMDE styles */
@@ -1129,15 +1170,24 @@ header .badge {
 }
 
 .options-container {
-  display: none;
-  position: absolute;
+  position: fixed;
   z-index: 999;
-  width: 100%;
   max-height: 150px;
   overflow-y: auto;
   background-color: var(--sheet-color);
   border: 0.0625rem solid #ccc;
   box-sizing: border-box;
+}
+
+/*
+ * Since we currently support both the new and old versions of the searchable select,
+ * we need to have this special case to differentiate them.
+ * TODO remove this once all non-react searchable selects are gone!
+ */
+.searchable-select>.options-container {
+  display: none;
+  position: absolute;
+  width: 100%;
 }
 
 .options-container .option-group-heading {
@@ -1215,11 +1265,11 @@ input:checked + .slider:before {
     width: 96px;
     height: 48px;
   }
-  
+
   .slider {
     border-radius: 48px;
   }
-  
+
   .slider:before {
     position: absolute;
     content: "";
@@ -1228,7 +1278,7 @@ input:checked + .slider:before {
     left: 6px;
     bottom: 6px;
   }
-  
+
   input:checked + .slider:before {
     -webkit-transform: translateX(48px);
     -ms-transform: translateX(48px);
@@ -1276,14 +1326,46 @@ input:checked + .slider:before {
       border-color: var(--link-color);
     }
   }
-  
+
   .card:hover .radio:not(:disabled) {
     border-color: silver;
   }
-    
+
   .card:hover .radio:not(:disabled):checked {
     border-color: var(--link-color);
   }
+}
+
+/* Pill Lists */
+.pill-list {
+  padding: 0.375rem;
+  font-size: 1rem;
+  background-color: var(--sheet-color);
+  border: 0.0625rem solid var(--input-border-color);
+  border-radius: 0.25rem;
+}
+
+.pill-list>input {
+  border: none;
+  outline: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.pill-list .pill {
+  border-radius: 1rem;
+  border: 0.0625rem solid var(--input-border-color);
+  background-color: var(--page-color);
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.pill-list .pill>span {
+  font-size: 1rem;
+  margin-bottom: -0.125rem;
 }
 
 /* Loading Spinner */

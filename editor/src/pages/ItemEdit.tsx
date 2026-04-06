@@ -10,10 +10,10 @@ import { splitIgnoringQuotes } from '../../../src/lib/markdown';
 import { indexedToJson, jsonToIndexed, type IndexedDocument } from '../../../src/lib/tiptapHelpers';
 import CustomDataEditor from '../components/CustomDataEditor';
 import EditorFrame from '../components/EditorFrame';
+import { FormPillList } from '../components/FormPillList';
 import { FormInput } from '../components/FormInput';
 import { FormSelect } from '../components/FormSelect';
 import { FormSwitch } from '../components/FormSwitch';
-import { FormTextArea } from '../components/FormTextArea';
 import Gallery from '../components/Gallery';
 import LineageEditor from '../components/LineageEditor';
 import MapEditor from '../components/MapEditor';
@@ -63,7 +63,6 @@ const yObjData = ydoc.getMap('obj_data');
 
 function syncItemExistsCache() {
   const remoteCache = ydoc.getMap('config').get('itemExistsCache') as typeof itemExistsCache | undefined;
-  console.log(remoteCache)
   if (remoteCache) {
     for (const universe in remoteCache) {
       if (!(universe in itemExistsCache)) {
@@ -297,8 +296,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     ...customTabs,
     body: (
       <EditorFrame
-        id='main-editor' editor={editor} getLink={async (previousUrl, type) => {
-          const url = window.prompt('URL', previousUrl);
+        id='main-editor'
+        editor={editor}
+        getLink={async (url, type) => {
           if (url?.startsWith('@')) {
             if (type === 'link') {
               const link = extractLinkData(url);
@@ -330,8 +330,12 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
               }
             }
           }
+
           return [url];
         }}
+        itemMap={itemMap}
+        categories={categories}
+        gallery={item.gallery}
       />
     ),
     gallery: (
@@ -455,13 +459,14 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
           selectors={docSelectors.selectedElement}
         />
 
-        <FormTextArea
+        <FormPillList
           id='tags'
           title={T('Tags')}
-          value={item.tags?.join(' ') ?? ''}
-          onChange={({ target }) => changeItem({ tags: target.value.split(' ') })}
+          values={item.tags ?? []}
+          onChange={(tags) => changeItem({ tags })}
           setAwareness={setAwareness}
           selectors={docSelectors.selectedElement}
+          uniqueValues={true}
         />
 
         <FormSwitch

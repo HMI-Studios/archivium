@@ -93,9 +93,9 @@ describe('Item spec', () => {
     cy.get('.tabs-buttons').contains('Timeline').click();
     cy.get('[data-tab="timeline"] button').contains('Import Event').click();
     cy.get('#import-event-item').children('input').type('Test Event');
-    cy.get('#import-event-item').children('div').find('div').filter(':visible').first().click();
+    cy.get('[data-select="import-event-item"]').find('div').filter(':visible').first().click();
     cy.get('#import-event-event').children('input').type('Cypress Event');
-    cy.get('#import-event-event').children('div').find('div').filter(':visible').first().click();
+    cy.get('[data-select="import-event-event"]').find('div').filter(':visible').first().click();
     cy.get('#import-event button').contains('Import').click();
     cy.wait(600);
     cy.get('#save-btn').click();
@@ -139,7 +139,7 @@ describe('Item spec', () => {
     cy.visit('/editor/universes/public-test-universe/items/cypress-character');
     cy.wait('@request');
 
-    cy.get('#tags').type('testing cypress');
+    cy.get('#tags').type('testing cypress ');
     cy.get('#preview-btn').click();
 
     cy.get('#tags>small').children().should('have.length', 2);

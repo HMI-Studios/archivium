@@ -4,6 +4,7 @@ exports.API = void 0;
 const contact_1 = require("./models/contact");
 const discussion_1 = require("./models/discussion");
 const email_1 = require("./models/email");
+const image_1 = require("./models/image");
 const item_1 = require("./models/item");
 const note_1 = require("./models/note");
 const notification_1 = require("./models/notification");
@@ -15,6 +16,7 @@ class API {
     contact;
     discussion;
     email;
+    image;
     item;
     note;
     notification;
@@ -26,6 +28,7 @@ class API {
         this.contact = new contact_1.ContactAPI(this);
         this.discussion = new discussion_1.DiscussionAPI(this);
         this.email = new email_1.EmailAPI(this);
+        this.image = new image_1.ImageAPI(this);
         this.item = new item_1.ItemAPI(this);
         this.note = new note_1.NoteAPI(this);
         this.notification = new notification_1.NotificationAPI(this);

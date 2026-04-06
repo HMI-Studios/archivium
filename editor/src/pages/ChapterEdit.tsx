@@ -120,27 +120,31 @@ export default function ChapterEdit({ universeLink }: ItemEditProps) {
 
         <hr className='w-100 mb-0' />
 
-        <EditorFrame id='main-editor' editor={editor} getLink={async (previousUrl, type) => {
-          const url = window.prompt('URL', previousUrl);
-          if (url?.startsWith('@')) {
-            if (type === 'link') {
-              const link = extractLinkData(url);
-              if (link.item) {
-                const universe = link.universe ?? story.universe_short;
-                if (!(universe in itemExistsCache)) {
-                  itemExistsCache[universe] = {};
-                }
-                if (!(link.item in itemExistsCache[universe])) {
-                  const existsFetcher = new BulkExistsFetcher();
-                  const fetchPromise = existsFetcher.exists(universe, link.item);
-                  existsFetcher.fetchAll();
-                  itemExistsCache[universe][link.item] = await fetchPromise;
+        <EditorFrame
+          id='main-editor'
+          editor={editor}
+          getLink={async (url, type) => {
+            if (url?.startsWith('@')) {
+              if (type === 'link') {
+                const link = extractLinkData(url);
+                if (link.item) {
+                  const universe = link.universe ?? story.universe_short;
+                  if (!(universe in itemExistsCache)) {
+                    itemExistsCache[universe] = {};
+                  }
+                  if (!(link.item in itemExistsCache[universe])) {
+                    const existsFetcher = new BulkExistsFetcher();
+                    const fetchPromise = existsFetcher.exists(universe, link.item);
+                    existsFetcher.fetchAll();
+                    itemExistsCache[universe][link.item] = await fetchPromise;
+                  }
                 }
               }
             }
-          }
-          return [url];
-        }} />
+
+            return [url];
+          }}
+        />
       </div>
     </>
   );

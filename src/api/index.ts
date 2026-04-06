@@ -1,6 +1,7 @@
 import { ContactAPI } from './models/contact';
 import { DiscussionAPI } from './models/discussion';
 import { EmailAPI } from './models/email';
+import { ImageAPI } from './models/image';
 import { ItemAPI } from './models/item';
 import { NoteAPI } from './models/note';
 import { NotificationAPI } from './models/notification';
@@ -13,6 +14,7 @@ export class API {
   readonly contact: ContactAPI;
   readonly discussion: DiscussionAPI;
   readonly email: EmailAPI;
+  readonly image: ImageAPI;
   readonly item: ItemAPI;
   readonly note: NoteAPI;
   readonly notification: NotificationAPI;
@@ -25,6 +27,7 @@ export class API {
     this.contact = new ContactAPI(this);
     this.discussion = new DiscussionAPI(this);
     this.email = new EmailAPI(this);
+    this.image = new ImageAPI(this);
     this.item = new ItemAPI(this);
     this.note = new NoteAPI(this);
     this.notification = new NotificationAPI(this);
