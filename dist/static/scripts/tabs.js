@@ -7,7 +7,7 @@ function showTab(tab) {
   query.set('tab', tab);
   const { protocol, host, pathname, hash } = window.location;
   const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
-  window.history.pushState({ path: newurl }, '', newurl);
+  window.history.replaceState(null, '', newurl);
 }
 
 const tabLoadPromise = new Promise((resolve) => {
