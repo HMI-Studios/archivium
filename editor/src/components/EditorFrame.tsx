@@ -13,9 +13,9 @@ type RichEditorProps = {
   id: string,
   editor: Editor;
   getLink: (url: string, type: LinkType) => Promise<[string | null, { [attr: string]: any }?]>;
-  itemMap: Record<string, ItemOptionEntry>;
-  categories: Categories;
-  gallery: GalleryImage[];
+  itemMap?: Record<string, ItemOptionEntry>;
+  categories?: Categories;
+  gallery?: GalleryImage[];
 };
 
 function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorProps) {
@@ -63,8 +63,8 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
   const [newLinkHref, setNewLinkHref] = useState<string>('');
   const [newLinkType, setNewLinkType] = useState<LinkType>();
 
-  const itemTitles = Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {});
-  const itemTypes = Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {});
+  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
+  const itemTypes = (itemMap && categories) ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
 
   const getLinkInput = async (previousUrl: string, type: LinkType) => {
     const linkPromise = new Promise<string>((resolve, reject) => {
@@ -107,7 +107,8 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
     const previousSrc = editor.getAttributes('image').src;
 
     getLinkInput(previousSrc, 'image').then(([src, attrs]) => {
-      if (src === null) {
+      console.log(src)
+      if (!src) {
         return;
       }
 
@@ -130,8 +131,13 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
     const previousSrc = editor.getAttributes('iframe').src;
 
     getLinkInput(previousSrc, 'videoembed').then(([src, _]) => {
-      if (src === null) {
+      if (!src) {
         return;
+      }
+
+      const urlObj = new URL(src);
+      if (urlObj.origin === 'https://www.youtube.com' && urlObj.searchParams.get('v')) {
+        src = `https://www.youtube.com/embed/${urlObj.searchParams.get('v')}`;
       }
 
       try {
@@ -161,7 +167,7 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
                   <label htmlFor='newLinkHref'>Link:</label>
                   <input id='newLinkHref' type='text' value={newLinkHref} onChange={({ target }) => setNewLinkHref(target.value)} />
                 </div>
-                {newLinkType === 'link' && (
+                {newLinkType === 'link' && itemMap && (
                   <div className='inputGroup narrow'>
                     <label>Link to item:</label>
                     <SearchableSelect
@@ -171,7 +177,7 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
                     />
                   </div>
                 )}
-                {newLinkType === 'image' && (
+                {newLinkType === 'image' && gallery && (
                   <div>
                     <label>Link to gallery image:</label>
                     <div className='small-image-grid mt-1'>

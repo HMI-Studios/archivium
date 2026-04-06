@@ -329,12 +329,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
                 }
               }
             }
-          } else if (type === 'videoembed') {
-            const urlObj = new URL(url);
-            if (urlObj.origin === 'https://www.youtube.com' && urlObj.searchParams.get('v')) {
-              return [`https://www.youtube.com/embed/${urlObj.searchParams.get('v')}`];
-            }
           }
+
           return [url];
         }}
         itemMap={itemMap}
