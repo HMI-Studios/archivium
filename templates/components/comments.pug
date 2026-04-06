@@ -61,7 +61,9 @@ div
     }
 
     const form = document.querySelector('#post-comment');
-    form.addEventListener('submit', (e) => {
-      const query = new URLSearchParams(window.location.search);
-      form.tab.value = query.get('tab');
-    });
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        const query = new URLSearchParams(window.location.search);
+        form.tab.value = query.get('tab');
+      });
+    }

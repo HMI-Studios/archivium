@@ -26,7 +26,6 @@ block scripts
     include /static/scripts/timelineRender.js
     include /static/scripts/cardUtils.js
     include /static/scripts/easyMDE.js
-    //- include /static/scripts/editor/rich.js
 
 block breadcrumbs
   -
@@ -148,9 +147,6 @@ block content
       if dataType in item.obj_data && 'title' in item.obj_data[dataType]
         li.navbarBtn(data-tab=dataType)
           h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('${dataType}')`) #{item.obj_data[dataType].title}
-    //- if item.obj_data.comments
-    //-   li.navbarBtn(data-tab='comments')
-    //-     h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('comments')`) #{capitalize(T('comments'))}
     if item.obj_data.notes || (contextUser && universe.author_permissions[contextUser.id] >= perms.WRITE && notes.length > 0)
       li.navbarBtn(data-tab='notes')
         h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('notes')`) #{capitalize(T('notes'))}
