@@ -378,7 +378,9 @@ block content
         const hash = location.hash.substr(1);
         if (hash) {
           const el = document.getElementById(hash);
-          el.scrollIntoView();
+          if (el) {
+            el.scrollIntoView();
+          }
         }
       });
 

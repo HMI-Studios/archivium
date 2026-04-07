@@ -100,6 +100,9 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
   const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
   const itemUniverses = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].universe }), {}) : {};
 
+  const query = new URLSearchParams(window.location.search);
+  const backLink = query.get('returnTo') ?? '/notes';
+
   return (
     <div className='notes'>
       <div id='note-edit'>
@@ -202,7 +205,7 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
               window.location.href = '/notes';
             }}>Delete</button>
 
-            <a className='button-link' href='/notes'>Back to List</a>
+            <a className='button-link' href={backLink}>Back to List</a>
           </div>
         </div>
       </div>

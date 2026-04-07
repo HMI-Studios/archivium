@@ -21,7 +21,7 @@ div
       .sheet.card.d-flex.flex-col.gap-1(data-uuid=note.uuid data-note=note)
         .d-flex.align-start.justify-between
           h2.ma-0 #{note.title}
-          a.edit-link.link.link-animated.d-flex.align-center(href=`/notes/${note.uuid}`)
+          a.edit-link.link.link-animated.d-flex.align-center
             span.material-symbols-outlined(style={ 'font-size': '1rem' }) edit
             |  #{T('Edit')}
         small
@@ -63,6 +63,20 @@ div
           return;
         };
         currentOpenUuid = uuid;
+
+        const query = new URLSearchParams(window.location.search);
+        query.set('note', uuid);
+        const { protocol, host, pathname, hash } = window.location;
+        const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
+        window.history.replaceState(null, '', newurl);
+
+        noteList.querySelectorAll('.card').forEach((el) => {
+          const editLink = el.querySelector('.edit-link');
+          const linkQuery = new URLSearchParams();
+          linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+          editLink.href = `/notes/${el.dataset.uuid}?${linkQuery.toString()}`;
+        });
+
         const noteCard = noteList.querySelector(`.card[data-uuid="${uuid}"]`);
         const preview = noteCard.querySelector('.preview-body');
         const rendered = noteCard.querySelector('.rendered-body');
@@ -126,17 +140,29 @@ div
         rendered.addEventListener('click', (e) => e.stopPropagation());
         const editLink = el.querySelector('.edit-link');
         editLink.addEventListener('click', (e) => e.stopPropagation());
+        const linkQuery = new URLSearchParams();
+        linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+        editLink.href = `/notes/${el.dataset.uuid}?${linkQuery.toString()}`;
       });
 
-      const query = new URLSearchParams(window.location.search);
-      const uuid = query.get('note');
-      if (uuid) {
-        toggleNote(uuid);
-      }
-      const tag = query.get('note_tag');
-      if (tag) {
-        filterByTag(tag);
-      }
+      window.addEventListener('load', async () => {
+        const query = new URLSearchParams(window.location.search);
+        const uuid = query.get('note');
+        if (uuid) {
+          await toggleNote(uuid);
+          const hash = location.hash.substr(1);
+          if (hash) {
+            const el = document.getElementById(hash);
+            if (el) {
+              el.scrollIntoView();
+            }
+          }
+        }
+        const tag = query.get('note_tag');
+        if (tag) {
+          filterByTag(tag);
+        }
+      });
 
 
       document.querySelectorAll('#note-list .card').forEach(async (el) => {
