@@ -1,10 +1,10 @@
-import { API } from "..";
 import crypto from 'crypto';
-import { BaseOptions, executeQuery, parseData, perms } from '../utils';
-import logger from '../../logger';
-import { User } from "./user";
 import { ResultSetHeader } from "mysql2";
-import { ForbiddenError, ModelError, NotFoundError, UnauthorizedError, ValidationError } from "../../errors";
+import { API } from "..";
+import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "../../errors";
+import { IndexedDocument } from "../../lib/tiptapHelpers";
+import { BaseOptions, executeQuery, parseData, perms } from '../utils';
+import { User } from "./user";
 
 export type NoteItemTuple = [string, string, string, string];
 export type NoteBoardTuple = [string, string, string, string];
@@ -26,7 +26,7 @@ export type Note = {
   id: number,
   uuid: string,
   title: string,
-  body: string,
+  body: IndexedDocument,
   is_public: boolean
   author_id: number,
   created_at: Date,
@@ -60,10 +60,10 @@ export class NoteAPI {
    * * they own the note,
    * * they have access to a board this note is pinned to, or,
    * * they have access to an item this note is linked to.
-   * @param {*} user 
-   * @param {*} conditions 
-   * @param {*} options 
-   * @returns 
+   * @param {*} user
+   * @param {*} conditions
+   * @param {*} options
+   * @returns
    */
   async getMany(user: User | undefined, conditions, options): Promise<Note[]> {
     const parsedConds = parseData(conditions ?? {});

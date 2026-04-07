@@ -151,7 +151,7 @@ CREATE TABLE note (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   uuid VARCHAR(36) UNIQUE,
   title VARCHAR(64),
-  body TEXT NOT NULL,
+  body JSON NOT NULL,
   is_public BOOLEAN,
   author_id INT NOT NULL,
   created_at TIMESTAMP NOT NULL,
