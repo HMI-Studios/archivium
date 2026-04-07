@@ -1,16 +1,15 @@
 import { useEditor } from '@tiptap/react';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router';
 import type { Note, NoteItemTuple } from '../../../src/api/models/note';
 import type { User } from '../../../src/api/models/user';
 import { editorExtensions, extractLinkData, type LinkData, type TiptapContext } from '../../../src/lib/editor';
 import { indexedToJson, jsonToIndexed } from '../../../src/lib/tiptapHelpers';
+import { BulkExistsFetcher, fetchAsync, fetchData, T } from '../helpers';
 import EditorFrame from './EditorFrame';
 import { FormPillList } from './FormPillList';
 import { FormSwitch } from './FormSwitch';
 import SaveBtn from './SaveBtn';
 import SearchableSelect from './SearchableSelect';
-import { BulkExistsFetcher, fetchAsync, fetchData, T } from '../helpers';
 
 export type NoteEditorProps = {
   noteUuid: string,
@@ -97,8 +96,8 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
     </div>;
   }
 
-  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
-  const itemUniverses = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].universe }), {}) : {};
+  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].title }), {}) : {};
+  const itemUniverses = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].universe }), {}) : {};
 
   const query = new URLSearchParams(window.location.search);
   const backLink = query.get('returnTo') ?? '/notes';
@@ -129,6 +128,8 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
 
             return [url];
           }}
+          itemTitles={itemTitles}
+          itemGroups={itemUniverses}
         />
       </div>
 

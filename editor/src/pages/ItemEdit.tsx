@@ -295,6 +295,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     }} />;
   }
 
+  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
+  const itemTypes = (itemMap && categories) ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
+
   const tabs: Record<string, ReactElement | null> = {
     ...customTabs,
     body: (
@@ -336,8 +339,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
           return [url];
         }}
-        itemMap={itemMap}
-        categories={categories}
+        itemTitles={itemTitles}
+        itemGroups={itemTypes}
         gallery={item.gallery}
       />
     ),

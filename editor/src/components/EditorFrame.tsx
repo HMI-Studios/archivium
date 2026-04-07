@@ -1,11 +1,10 @@
 import type { SetImageOptions } from '@tiptap/extension-image';
 import { Editor, EditorContent, useEditorState } from '@tiptap/react';
 import { useCallback, useState } from 'react';
-import { capitalize, T } from '../helpers';
 import { createPortal } from 'react-dom';
-import SearchableSelect from './SearchableSelect';
-import type { Categories, ItemOptionEntry } from '../pages/ItemEdit';
 import type { GalleryImage } from '../../../src/api/models/item';
+import { T } from '../helpers';
+import SearchableSelect from './SearchableSelect';
 
 export type LinkType = 'link' | 'image' | 'videoembed';
 
@@ -13,12 +12,12 @@ type RichEditorProps = {
   id: string,
   editor: Editor;
   getLink: (url: string, type: LinkType) => Promise<[string | null, { [attr: string]: any }?]>;
-  itemMap?: Record<string, ItemOptionEntry>;
-  categories?: Categories;
+  itemTitles?: Record<string, string>;
+  itemGroups?: Record<string, string>;
   gallery?: GalleryImage[];
 };
 
-function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorProps) {
+function MenuBar({ editor, getLink, itemTitles, itemGroups, gallery }: RichEditorProps) {
   // Read the current editor's state, and re-render the component when it changes
   const editorState = useEditorState({
     editor,
@@ -62,9 +61,6 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
   const [linkModalPromise, setLinkModalPromise] = useState<{ resolve: (data: string) => void, reject: () => void } | null>(null);
   const [newLinkHref, setNewLinkHref] = useState<string>('');
   const [newLinkType, setNewLinkType] = useState<LinkType>();
-
-  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
-  const itemTypes = (itemMap && categories) ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
 
   const getLinkInput = async (previousUrl: string, type: LinkType) => {
     const linkPromise = new Promise<string>((resolve, reject) => {
@@ -166,13 +162,13 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
                   <label htmlFor='newLinkHref'>Link:</label>
                   <input id='newLinkHref' type='text' value={newLinkHref} onChange={({ target }) => setNewLinkHref(target.value)} />
                 </div>
-                {newLinkType === 'link' && itemMap && (
+                {newLinkType === 'link' && itemTitles && (
                   <div className='inputGroup narrow'>
                     <label>Link to item:</label>
                     <SearchableSelect
                       options={itemTitles}
                       onSelect={(value) => setNewLinkHref(value ? `@${value}` : '')}
-                      groups={itemTypes}
+                      groups={itemGroups}
                     />
                   </div>
                 )}
@@ -442,11 +438,11 @@ function MenuBar({ editor, getLink, itemMap, categories, gallery }: RichEditorPr
   )
 }
 
-export default function EditorFrame({ id, editor, getLink, itemMap, categories, gallery }: RichEditorProps) {
+export default function EditorFrame({ id, editor, getLink, itemTitles, itemGroups, gallery }: RichEditorProps) {
   return <div
     className='tiptap-editor markdown'
   >
-    <MenuBar id={id} editor={editor} getLink={getLink} itemMap={itemMap} categories={categories} gallery={gallery} />
+    <MenuBar id={id} editor={editor} getLink={getLink} itemTitles={itemTitles} itemGroups={itemGroups} gallery={gallery} />
     <EditorContent
       id={id}
       editor={editor}
