@@ -9,6 +9,7 @@ import { Note } from './models/note';
 import { User } from './models/user';
 import { NotFoundError } from '../errors';
 import { Session } from './models/session';
+import { tryRenderContent } from '../lib/renderContent';
 
 type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type APIRouteHandler = (req: Request<{ [key: string]: string }>, res: Response) => Promise<any>;
@@ -121,7 +122,8 @@ export default function (app: Express, upload: Multer) {
           POST: (req) => api.note.post(req.session.user, req.body),
         }, [
           new APIRoute('/:uuid', {
-            GET: (req) => api.note.getOne(req.session.user, req.params.uuid),
+            GET: (req) => api.note.getOne(req.session.user, req.params.uuid)
+              .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
             PUT: (req) => api.note.put(req.session.user, req.params.uuid, req.body),
             DELETE: (req) => api.note.del(req.session.user, req.params.uuid),
           }),
@@ -217,7 +219,9 @@ export default function (app: Express, upload: Multer) {
                 req.params.boardShortname,
                 { 'note.uuid': req.params.uuid },
                 { fullBody: true, connections: true, limit: 1 },
-              ).then((notes: Note[]) => notes[0]),
+              )
+                .then((notes: Note[]) => notes[0])
+                .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
             }),
           ]),
         ]),
@@ -254,7 +258,9 @@ export default function (app: Express, upload: Multer) {
                   req.params.itemShortName,
                   { 'note.uuid': req.params.uuid },
                   { fullBody: true, connections: true, limit: 1 },
-                ).then((data: [Note[], User[]]) => data[0][0]),
+                )
+                  .then((data: [Note[], User[]?]) => data[0][0])
+                  .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
               }),
             ]),
             new APIRoute('/data', {

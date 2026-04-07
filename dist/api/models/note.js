@@ -58,7 +58,7 @@ class NoteAPI {
           note.is_public, note.author_id,
           note.created_at, note.updated_at,
           tag.tags,
-          ${options?.fullBody ? 'note.body' : 'SUBSTRING(note.body, 1, 255) AS body'}
+          ${options?.fullBody ? 'note.body' : `SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(note.body, '$.text')), 1, 255) AS body`}
           ${options?.connections ? ', item.items' : ''}
           ${options?.connections ? ', board.boards' : ''}
           ${options?.search ? ', LOCATE(?, note.body) AS match_pos' : ''}

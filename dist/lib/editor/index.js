@@ -43,11 +43,13 @@ function shorthandResolver(href, ctx) {
         if (href.startsWith('@')) {
             const { universe, item, hash, query } = extractLinkData(href);
             if (item) {
-                ;
-                const universeLink = ctx.universeLink(universe ?? ctx.currentUniverse);
+                const universeShort = universe ?? ctx.currentUniverse;
+                if (!universeShort)
+                    return { href };
+                const universeLink = ctx.universeLink(universeShort);
                 return {
                     href: `${universeLink}/items/${item}${query ? `?${query}` : ''}${hash ? `#${hash}` : ''}`,
-                    exists: ctx.itemExists(universe ?? ctx.currentUniverse, item),
+                    exists: ctx.itemExists(universeShort, item),
                 };
             }
         }

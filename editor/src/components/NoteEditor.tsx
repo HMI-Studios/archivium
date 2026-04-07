@@ -28,7 +28,7 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
   const [itemMap, setItemMap] = useState<Record<string, ItemOptionEntry>>();
 
   const context: TiptapContext = {
-    currentUniverse: '',
+    currentUniverse: null,
     universeLink,
     itemExists(universe, item): boolean {
       return (itemExistsCache[universe] ?? {})[item] ?? false;

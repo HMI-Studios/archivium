@@ -21,6 +21,8 @@ async function tryRenderContent(req, content, universeShortname) {
         await Promise.all(links.map(async (link) => {
             if (link.item) {
                 const universeShort = link.universe ?? universeShortname;
+                if (!universeShort)
+                    return;
                 if (!(universeShort in itemsPerUniverse)) {
                     itemsPerUniverse[universeShort] = {};
                 }
