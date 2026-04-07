@@ -138,7 +138,7 @@ export default {
       title: body.note_title,
       is_public: body.note_public === 'on',
       body: body.note_body,
-      items: body.items,
+      items: (body.items ?? []).map(({ item, universe }) => ([null, item, null, universe])),
       boards: body.boards,
       tags: body.note_tags?.split(' ') ?? [],
     });

@@ -220,9 +220,10 @@ export class NoteAPI {
     return uuid;
   }
 
-  async put(user: User | undefined, uuid: string, changes): Promise<ResultSetHeader> {
+  async put(user: User | undefined, uuid: string, changes: Partial<Note>): Promise<ResultSetHeader> {
     if (!user) throw new UnauthorizedError();
     const { title, body, is_public, items, boards, tags } = changes;
+    if (!title || !body || is_public === undefined) throw new ValidationError();
     const note = await this.getOne(user, uuid);
 
     const queryString = `
@@ -233,10 +234,10 @@ export class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-    const data = await executeQuery<ResultSetHeader>(queryString, [title, body, is_public, note.uuid]);
+    const data = await executeQuery<ResultSetHeader>(queryString, [title, JSON.stringify(body), is_public, note.uuid]);
 
     await executeQuery('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
-    for (const { item, universe } of items ?? []) {
+    for (const [, item,, universe] of items ?? []) {
       await this.linkToItem(user, universe, item, uuid);
     }
 

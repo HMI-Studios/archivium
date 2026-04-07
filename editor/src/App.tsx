@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router';
 import ChapterEdit from './pages/ChapterEdit';
 import ItemEdit from './pages/ItemEdit';
+import NoteEdit from './pages/NoteEdit';
 
 export type AppProps = {
   displayUniverse: string,
@@ -34,6 +35,9 @@ export default function App({ displayUniverse, addrPrefix, domain, providerAddre
             <Route path=':chapterIndex' element={<ChapterEdit universeLink={universeLink} />} />
           </Route>
         </Route>
+      </Route>
+      <Route path='notes'>
+          <Route path=':noteUuid' element={<NoteEdit universeLink={universeLink} />} />
       </Route>
     </Routes>
   );

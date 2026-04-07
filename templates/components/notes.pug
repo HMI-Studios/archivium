@@ -61,7 +61,7 @@ block append styles
           label.switch
             input(id='note_public' name='note_public' type='checkbox')
             span.slider
-        
+
         label #{T('Linked items')}:
         ul#note-items-edit.ma-0.pa-0
         #note-items
@@ -70,19 +70,19 @@ block append styles
         //- ul#note-boards-edit.ma-0.pa-0
         //- #note-boards
 
-        label(for='note_tags') #{T('Tags')}: 
+        label(for='note_tags') #{T('Tags')}:
         textarea(id='note_tags' name='note_tags')
-        
+
         input.hidden(id='create' type='submit' value='Create' formaction=`${ADDR_PREFIX}/notes/create`)
         input.hidden(id='save' type='submit' value='Save' formaction=`${ADDR_PREFIX}/notes/edit`)
         input.hidden(id='delete' type='button' value='Delete')
-        
+
         input(id='note_body' type='hidden' name='note_body')
         input(id='note_uuid' type='hidden' name='note_uuid')
         input(id='note_universe' type='hidden' name='note_universe' value=(universe && universe.shortname))
         input(id='note_item' type='hidden' name='note_item' value=(item && item.shortname))
         input(id='note_board' type='hidden' name='note_board' value=(board && board.shortname))
-      
+
       .preview.hidden
         h3 #{T('Linked items')}:
         ul#note-items-list.ma-0
@@ -396,7 +396,7 @@ block append styles
         filterByTag(tag);
       }
 
-        
+
       document.querySelectorAll('#note-list .card').forEach(async (el) => {
         const body = el.querySelector('.body');
         const text = await renderMdPreview('#{universe && universe.shortname}', JSON.parse(el.dataset.note).body, null);

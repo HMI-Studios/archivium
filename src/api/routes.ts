@@ -100,6 +100,16 @@ export default function (app: Express, upload: Multer) {
       ]),
     ]),
     new APIRoute('/is-subscribed', { POST: (req) => api.notification.isSubscribed(req.session.user, req.body) }),
+    new APIRoute('/items', {
+      GET: (req) => api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
+        sort: req.getQueryParam('sort'),
+        sortDesc: req.getQueryParam('sort_order') === 'desc',
+        limit: req.getQueryParamAsNumber('limit'),
+        type: req.getQueryParam('type'),
+        tag: req.getQueryParam('tag'),
+        author: req.getQueryParam('author'),
+      }),
+    }),
     new APIRoute('/users', { GET: () => api.user.getMany() }, [
       new APIRoute('/:username', {
         GET: (req) => api.user.getOne({ 'user.username': req.params.username }),
@@ -112,6 +122,7 @@ export default function (app: Express, upload: Multer) {
         }, [
           new APIRoute('/:uuid', {
             GET: (req) => api.note.getOne(req.session.user, req.params.uuid),
+            PUT: (req) => api.note.put(req.session.user, req.params.uuid, req.body),
             DELETE: (req) => api.note.del(req.session.user, req.params.uuid),
           }),
         ]),

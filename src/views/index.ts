@@ -190,6 +190,7 @@ export default function(app: Express) {
   }, (get, post) => {
     get('/editor', sites.ALL, [Auth.verifySessionOrRedirect], pages.misc.editor);
     get('/editor/*', sites.ALL, [Auth.verifySessionOrRedirect], pages.misc.editor);
+    get('/notes/*', sites.ALL, [Auth.verifySessionOrRedirect], pages.misc.editor);
 
     /* Universe Pages */
     get('/universes', sites.NORMAL, [], pages.universe.list);

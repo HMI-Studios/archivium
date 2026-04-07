@@ -169,6 +169,8 @@ class NoteAPI {
         if (!user)
             throw new errors_1.UnauthorizedError();
         const { title, body, is_public, items, boards, tags } = changes;
+        if (!title || !body || is_public === undefined)
+            throw new errors_1.ValidationError();
         const note = await this.getOne(user, uuid);
         const queryString = `
         UPDATE note
@@ -178,9 +180,9 @@ class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-        const data = await (0, utils_1.executeQuery)(queryString, [title, body, is_public, note.uuid]);
+        const data = await (0, utils_1.executeQuery)(queryString, [title, JSON.stringify(body), is_public, note.uuid]);
         await (0, utils_1.executeQuery)('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
-        for (const { item, universe } of items ?? []) {
+        for (const [, item, , universe] of items ?? []) {
             await this.linkToItem(user, universe, item, uuid);
         }
         if (tags) {

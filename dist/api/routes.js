@@ -95,6 +95,16 @@ function default_1(app, upload) {
             ]),
         ]),
         new APIRoute('/is-subscribed', { POST: (req) => _1.default.notification.isSubscribed(req.session.user, req.body) }),
+        new APIRoute('/items', {
+            GET: (req) => _1.default.item.getMany(req.session.user, null, Math.max(utils_1.perms.READ, Number(req.query.perms)) || utils_1.perms.READ, {
+                sort: req.getQueryParam('sort'),
+                sortDesc: req.getQueryParam('sort_order') === 'desc',
+                limit: req.getQueryParamAsNumber('limit'),
+                type: req.getQueryParam('type'),
+                tag: req.getQueryParam('tag'),
+                author: req.getQueryParam('author'),
+            }),
+        }),
         new APIRoute('/users', { GET: () => _1.default.user.getMany() }, [
             new APIRoute('/:username', {
                 GET: (req) => _1.default.user.getOne({ 'user.username': req.params.username }),
@@ -107,6 +117,7 @@ function default_1(app, upload) {
                 }, [
                     new APIRoute('/:uuid', {
                         GET: (req) => _1.default.note.getOne(req.session.user, req.params.uuid),
+                        PUT: (req) => _1.default.note.put(req.session.user, req.params.uuid, req.body),
                         DELETE: (req) => _1.default.note.del(req.session.user, req.params.uuid),
                     }),
                 ]),
