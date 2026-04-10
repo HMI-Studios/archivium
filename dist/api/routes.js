@@ -240,12 +240,9 @@ function default_1(app, upload) {
                         new APIRoute('/notes', {
                             GET: (req) => _1.default.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName),
                             POST: async (req) => {
-                                const [code, data] = await _1.default.note.post(req.session.user, req.body);
-                                if (!data)
-                                    return [code];
-                                const [, uuid] = data;
+                                const uuid = await _1.default.note.post(req.session.user, req.body);
                                 await _1.default.note.linkToItem(req.session.user, req.params.universeShortName, req.params.itemShortName, uuid);
-                                return [code, data];
+                                return uuid;
                             },
                         }, [
                             new APIRoute('/:uuid', {

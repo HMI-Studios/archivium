@@ -159,17 +159,21 @@ class NoteAPI {
         if (!user)
             throw new errors_1.UnauthorizedError();
         const uuid = crypto_1.default.randomUUID();
+        if (title === undefined || is_public === undefined)
+            throw new errors_1.ValidationError('Missing required fields.');
         const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
-        await (0, utils_1.executeQuery)(queryString, [uuid, title, body, is_public, user.id, new Date(), new Date()]);
-        const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
-        this.putTags(user, uuid, trimmedTags);
+        await (0, utils_1.executeQuery)(queryString, [uuid, title, body ? JSON.stringify(body) : null, is_public, user.id, new Date(), new Date()]);
+        if (tags) {
+            const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
+            this.putTags(user, uuid, trimmedTags);
+        }
         return uuid;
     }
     async put(user, uuid, changes) {
         if (!user)
             throw new errors_1.UnauthorizedError();
         const { title, body, is_public, items, boards, tags } = changes;
-        if (!title || !body || is_public === undefined)
+        if (title === undefined || is_public === undefined)
             throw new errors_1.ValidationError();
         const note = await this.getOne(user, uuid);
         const queryString = `
@@ -180,7 +184,7 @@ class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-        const data = await (0, utils_1.executeQuery)(queryString, [title, JSON.stringify(body), is_public, note.uuid]);
+        const data = await (0, utils_1.executeQuery)(queryString, [title, body ? JSON.stringify(body) : null, is_public, note.uuid]);
         await (0, utils_1.executeQuery)('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
         for (const [, item, , universe] of items ?? []) {
             await this.linkToItem(user, universe, item, uuid);

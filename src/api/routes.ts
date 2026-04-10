@@ -244,11 +244,9 @@ export default function (app: Express, upload: Multer) {
             new APIRoute('/notes', {
               GET: (req) => api.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName),
               POST: async (req) => {
-                const [code, data] = await api.note.post(req.session.user, req.body);
-                if (!data) return [code];
-                const [, uuid] = data;
+                const uuid = await api.note.post(req.session.user, req.body);
                 await api.note.linkToItem(req.session.user, req.params.universeShortName, req.params.itemShortName, uuid);
-                return [code, data];
+                return uuid;
               },
             }, [
               new APIRoute('/:uuid', {

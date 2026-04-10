@@ -26,7 +26,7 @@ export type Note = {
   id: number,
   uuid: string,
   title: string,
-  body: IndexedDocument,
+  body: IndexedDocument | null,
   is_public: boolean
   author_id: number,
   created_at: Date,
@@ -207,15 +207,19 @@ export class NoteAPI {
     return data;
   }
 
-  async post(user: User | undefined, { title, body, is_public, tags }): Promise<string> {
+  async post(user: User | undefined, { title, body, is_public, tags }: Partial<Note>): Promise<string> {
     if (!user) throw new UnauthorizedError();
     const uuid = crypto.randomUUID();
 
-    const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
-    await executeQuery<ResultSetHeader>(queryString, [uuid, title, body, is_public, user.id, new Date(), new Date()]);
+    if (title === undefined || is_public === undefined) throw new ValidationError('Missing required fields.');
 
-    const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
-    this.putTags(user, uuid, trimmedTags);
+    const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
+    await executeQuery<ResultSetHeader>(queryString, [uuid, title, body ? JSON.stringify(body) : null, is_public, user.id, new Date(), new Date()]);
+
+    if (tags) {
+      const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
+      this.putTags(user, uuid, trimmedTags);
+    }
 
     return uuid;
   }
@@ -223,7 +227,7 @@ export class NoteAPI {
   async put(user: User | undefined, uuid: string, changes: Partial<Note>): Promise<ResultSetHeader> {
     if (!user) throw new UnauthorizedError();
     const { title, body, is_public, items, boards, tags } = changes;
-    if (!title || !body || is_public === undefined) throw new ValidationError();
+    if (title === undefined || is_public === undefined) throw new ValidationError();
     const note = await this.getOne(user, uuid);
 
     const queryString = `
@@ -234,7 +238,7 @@ export class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-    const data = await executeQuery<ResultSetHeader>(queryString, [title, JSON.stringify(body), is_public, note.uuid]);
+    const data = await executeQuery<ResultSetHeader>(queryString, [title, body ? JSON.stringify(body) : null, is_public, note.uuid]);
 
     await executeQuery('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
     for (const [, item,, universe] of items ?? []) {

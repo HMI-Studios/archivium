@@ -11,6 +11,7 @@ import { Chapter, Story } from '../../api/models/story';
 import { BasicItem, Item } from '../../api/models/item';
 import { Thread } from '../../api/models/discussion';
 import { Note } from '../../api/models/note';
+import { IndexedDocument } from '../../lib/tiptapHelpers';
 
 async function createUser(username: string, email?: string, password?: string): Promise<User> {
   if (!email) email = `${username}@archivium.net`;
@@ -82,7 +83,7 @@ async function postComment(poster: User, thread: Thread, comment: string): Promi
   await api.discussion.postCommentToThread(poster, thread.id, { body: comment });
 }
 
-async function createNote(owner: User, title: string, body: string, is_public: boolean, tags: string[], items: BasicItem[] = [], boards: any[] = []): Promise<Note> {
+async function createNote(owner: User, title: string, body: IndexedDocument, is_public: boolean, tags: string[], items: BasicItem[] = [], boards: any[] = []): Promise<Note> {
   const uuid = await api.note.post(owner, { title, body, is_public, tags });
   const note = await api.note.getOne(owner, uuid);
   for (const item of items) {
@@ -126,13 +127,13 @@ async function main(): Promise<void> {
     const username = `test${user}`;
     users[username] = await createUser(username);
   }
-  
+
   console.log('Creating contacts...');
   await createContact(users.testadmin, users.testuser, false);
   await createContact(users.testadmin, users.testwriter);
   await createContact(users.testadmin, users.testcommenter);
   await createContact(users.testadmin, users.testreader);
-  
+
   console.log('Creating universes...');
   const publicUniverse = await createUniverse(users.testowner, 'Public Test Universe', 'public-test-universe', true);
   const privateUniverse = await createUniverse(users.testowner, 'Private Test Universe', 'private-test-universe', false, true);
@@ -204,10 +205,10 @@ async function main(): Promise<void> {
   await postComment(users.testwriter, chatroomThread, '# Markdown test\n- **bold**\n- *italics*\n- etc.');
 
   console.log('Creating notes...');
-  await createNote(users.testwriter, 'Public Test Note', loremIpsum, true, ['test', 'public']);
-  await createNote(users.testwriter, 'Public Article Note', loremIpsum, true, ['article', 'public'], [testArticle]);
-  await createNote(users.testwriter, 'Private Test Note', loremIpsum, false, ['test', 'private']);
-  await createNote(users.testwriter, 'Private Article Note', loremIpsum, false, ['article', 'private'], [testArticle]);
+  await createNote(users.testwriter, 'Public Test Note', unformattedTiptapDocument(loremIpsum), true, ['test', 'public']);
+  await createNote(users.testwriter, 'Public Article Note', unformattedTiptapDocument(loremIpsum), true, ['article', 'public'], [testArticle]);
+  await createNote(users.testwriter, 'Private Test Note', unformattedTiptapDocument(loremIpsum), false, ['test', 'private']);
+  await createNote(users.testwriter, 'Private Article Note', unformattedTiptapDocument(loremIpsum), false, ['article', 'private'], [testArticle]);
 
   console.log('Posting newsletters...');
   const archivum = await createUniverse(sysadmin, 'Archivium', 'archivium', true, true, true, { cats: { newsletter: ['newsletter', 'newsletters', '#deddca'] } });

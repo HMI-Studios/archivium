@@ -1,5 +1,5 @@
 import { useEditor } from '@tiptap/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Note, NoteItemTuple } from '../../../src/api/models/note';
 import type { User } from '../../../src/api/models/user';
 import { editorExtensions, extractLinkData, type LinkData, type TiptapContext } from '../../../src/lib/editor';
@@ -49,6 +49,15 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
     fetchData(`/api/me`, async (user: User) => {
       setAuthorName(user.username);
       const noteData = await fetchAsync(`/api/users/${user.username}/notes/${noteUuid}`) as Note;
+
+      const itemMapPromise = fetchData('/api/items', (items) => {
+        const newItemMap: Record<number, ItemOptionEntry> = {};
+        for (const { shortname, title, universe, universe_short } of items) {
+          newItemMap[shortname] = { title, universe, universe_short };
+        }
+        setItemMap(newItemMap);
+      });
+
       if (noteData.body) {
         const links: LinkData[] = [];
         const json = indexedToJson(noteData.body, (href) => links.push(extractLinkData(href)));
@@ -67,18 +76,12 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
         });
         void bulkFetcher.fetchAll();
 
-        // TODO we'd like to use perms.WRITE here instead of hardcoding "3" but that currently breaks webpack.
-        const itemMapPromise = fetchData('/api/items?perms=3', (items) => {
-          const newItemMap: Record<number, ItemOptionEntry> = {};
-          for (const { shortname, title, universe, universe_short } of items) {
-            newItemMap[shortname] = { title, universe, universe_short };
-          }
-          setItemMap(newItemMap);
-        });
-
         await Promise.all([...fetchPromises, itemMapPromise]);
         setInitContent(json);
+      } else {
+        await itemMapPromise;
       }
+
       setNote(noteData);
     });
   }, [noteUuid]);
@@ -89,15 +92,21 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
     }
   }, [editor, initContent]);
 
+  const itemTitles = useMemo(
+    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].title }), {}) : {},
+    [itemMap],
+  );
+  const itemUniverses = useMemo(
+    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].universe }), {}) : {},
+    [itemMap],
+  );
+
   /* Loading Screen */
   if (!note || !itemMap || !authorName) {
     return <div className='d-flex justify-center align-center'>
       <div className='loader' style={{ marginTop: 'max(0px, calc(50vh - 50px - var(--page-margin-top)))' }}></div>
     </div>;
   }
-
-  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].title }), {}) : {};
-  const itemUniverses = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].universe }), {}) : {};
 
   const query = new URLSearchParams(window.location.search);
   const backLink = query.get('returnTo') ?? '/notes';

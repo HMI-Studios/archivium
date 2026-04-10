@@ -6,14 +6,9 @@ block append styles
       mask-image: linear-gradient(135deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0) 97%);
     }
 
-    #notes-left-btn.hidden {
-      display: inline !important;
-      visibility: hidden;
-    }
-
 div
   p.ma-0.pa-1
-    a.link.link-animated#notes-left-btn #{T('Create Note')}
+    a.link.link-animated#create-note #{T('Create Note')}
 
   #note-list.card-list
     input(id='search' name='search' placeholder='Search...')
@@ -44,6 +39,18 @@ div
     (async function() {
       if (!window.createElement) throw 'domUtils not loaded!';
       if (!window.getJSON) throw 'fetchUtils.js not loaded!';
+
+      const newNoteLink = document.querySelector('#create-note');
+      newNoteLink.addEventListener('click', async () => {
+        const uuid = await postJSON('#{noteBaseRoute}', {
+          title: '',
+          is_public: false,
+        });
+
+        const linkQuery = new URLSearchParams();
+        linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+        window.location.href = `/notes/${uuid}?${linkQuery.toString()}`;
+      });
 
       const noteList = document.querySelector('#note-list');
       const searchBar = noteList.querySelector('#search');
@@ -172,7 +179,7 @@ div
 
       document.querySelectorAll('#note-list .card').forEach(async (el) => {
         const previewBody = el.querySelector('.preview-body');
-        const text = JSON.parse(el.dataset.note).body.replaceAll('\n', ' ');
+        const text = JSON.parse(el.dataset.note).body?.replaceAll('\n', ' ') ?? '';
         const maxLength = 255;
         previewBody.innerText = text.length >= maxLength ? `${text.substring(0, maxLength)}...` : text;
       });
