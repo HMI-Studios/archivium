@@ -147,7 +147,7 @@ class UniverseAPI {
         const item = (await (0, utils_1.executeQuery)(itemQueryString, [universe.id]))[0];
         if (!item)
             throw new errors_1.NotFoundError();
-        const publicBody = JSON.parse(item.obj_data)?.body;
+        const publicBody = item.obj_data.body;
         if (!publicBody)
             return;
         return publicBody;

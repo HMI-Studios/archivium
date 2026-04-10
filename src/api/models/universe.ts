@@ -1,8 +1,8 @@
-import { PoolConnection, ResultSetHeader } from 'mysql2/promise';
+import { PoolConnection, QueryResult, ResultSetHeader } from 'mysql2/promise';
 import { API } from '..';
 import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
 import { BaseOptions, Tier, executeQuery, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
-import { ItemEvent } from './item';
+import { Item, ItemEvent } from './item';
 import { User } from './user';
 import { IndexedDocument } from '../../lib/tiptapHelpers';
 
@@ -183,9 +183,9 @@ export class UniverseAPI {
     const publicPageEnabled = universe.obj_data.publicPage;
     if (!publicPageEnabled) return;
     const itemQueryString = `SELECT obj_data FROM item WHERE universe_id = ? AND shortname = '_public'`;
-    const item = (await executeQuery(itemQueryString, [universe.id]))[0];
+    const item: Partial<Item> | undefined = (await executeQuery<QueryResult>(itemQueryString, [universe.id]))[0];
     if (!item) throw new NotFoundError();
-    const publicBody = JSON.parse(item.obj_data)?.body;
+    const publicBody = item.obj_data!.body;
     if (!publicBody) return;
     return publicBody;
   }

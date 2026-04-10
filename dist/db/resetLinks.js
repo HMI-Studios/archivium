@@ -18,9 +18,8 @@ async function main() {
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         console.log(`Resetting... (${i}/${items.length})`);
-        const objData = JSON.parse(item.obj_data);
-        if (objData.body) {
-            await api_1.default.item.handleLinks(item, objData);
+        if (item.obj_data.body) {
+            await api_1.default.item.handleLinks(item, item.obj_data);
         }
         readline_1.default.moveCursor(process.stdout, 0, -1);
     }

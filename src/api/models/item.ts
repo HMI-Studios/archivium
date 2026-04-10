@@ -99,7 +99,16 @@ export type ItemLink = {
   universe_short: string,
 };
 
-export type BasicItem<T = string | Object> = {
+export type BuiltinTab = 'lineage' | 'map' | 'timeline' | 'gallery';
+
+export type ObjData = {
+  notes?: boolean,
+  comments?: boolean,
+  body?: IndexedDocument,
+  tabs?: { [key: string]: any }, // TODO remove these any types at some point
+} & { [K in BuiltinTab]?: any };
+
+export type BasicItem = {
   id: number,
   title: string,
   shortname: string,
@@ -113,10 +122,10 @@ export type BasicItem<T = string | Object> = {
   notifs_enabled: boolean;
   author_id: number | null,
   tags: string[],
-  obj_data: T, // TODO we should try to never stringify this if possible
+  obj_data: ObjData,
 };
 
-export type Item<T = string | Object> = BasicItem<T> & {
+export type Item = BasicItem & {
   events: ItemEvent[],
   map: Map | null,
   gallery: GalleryImage[],
@@ -437,34 +446,17 @@ export class ItemAPI {
     item.links = links as ItemLink[];
 
     if (item.obj_data) {
-      const objData = JSON.parse(item.obj_data as string);
       const links = await executeQuery(`
         SELECT to_universe_short, to_item_short, href
         FROM itemlink
         WHERE from_item = ?
       `, [item.id]);
-      if (typeof objData.body === 'string') {
-        const replacements = {};
-        const attachments = {};
-        for (const { to_universe_short, to_item_short, href } of links) {
-          const replacement = to_universe_short === item.universe_short ? `${to_item_short}` : `${to_universe_short}/${to_item_short}`;
-          replacements[href] = replacement;
-          const match = href.match(/[?#]/);
-          const attachment = match ? `${match[0]}${href.slice(match.index + 1)}` : '';
-          attachments[href] = attachment;
-        }
-        objData.body = objData.body.replace(/(?<!\\)(\[[^\]]*?\])\(([^)]+)\)/g, (match, brackets, parens) => {
-          if (parens in replacements) {
-            return `${brackets}(@${replacements[parens]}${attachments[parens]})`;
-          }
-          return match;
-        });
-      } else if (objData.body) {
+      if (item.obj_data.body) {
         const linkMap = {};
         for (const { to_universe_short, to_item_short, href } of links) {
           linkMap[href] = [to_universe_short, to_item_short];
         }
-        updateLinks(objData.body, (href) => {
+        updateLinks(item.obj_data.body, (href) => {
           if (href in linkMap) {
             const linkData = extractLinkData(href);
             if (linkData.item) {
@@ -482,7 +474,6 @@ export class ItemAPI {
           return href;
         });
       }
-      item.obj_data = JSON.stringify(objData);
     }
 
     if (user) {
@@ -781,7 +772,7 @@ export class ItemAPI {
         title: body.title,
         shortname: body.shortname,
         item_type: body.item_type,
-        obj_data: JSON.stringify(body.obj_data),
+        obj_data: body.obj_data,
         tags: body.tags ?? [],
       };
       const itemId = await this.put(user, universeShortname, itemShortname, changes, conn);
@@ -1170,7 +1161,7 @@ export class ItemAPI {
     user: User | undefined,
     universeShortname: string,
     itemShortname: string,
-    changes: { title?: string, shortname?: string, item_type?: string, obj_data?: string, tags?: string[] },
+    changes: { title?: string, shortname?: string, item_type?: string, obj_data?: ObjData, tags?: string[] },
     conn?: PoolConnection
   ): Promise<number> {
     if (!user) throw new UnauthorizedError();
@@ -1179,8 +1170,7 @@ export class ItemAPI {
     if (!title || !obj_data) throw new ValidationError('Missing required fields');
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE);
 
-    const objData = JSON.parse(obj_data);
-    await this.handleLinks(item as Item, objData, conn);
+    await this.handleLinks(item as Item, obj_data, conn);
 
     if (tags) {
       const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
@@ -1219,11 +1209,11 @@ export class ItemAPI {
         WHERE id = ?;
       `;
 
-      await conn.execute(queryString, [title, shortname ?? item.shortname, item_type ?? item.item_type, JSON.stringify(objData), user.id, item.id]);
+      await conn.execute(queryString, [title, shortname ?? item.shortname, item_type ?? item.item_type, JSON.stringify(obj_data), user.id, item.id]);
 
       if (
         title !== item.title || shortname !== item.shortname || item_type !== item.item_type ||
-        !deepCompare(objData, JSON.parse(item.obj_data as string)) || !deepCompare(tags, item.tags)
+        !deepCompare(obj_data, item.obj_data) || !deepCompare(tags, item.tags)
       ) {
         this.markUpdated(item.id, conn);
         this.api.universe.putUpdatedAtWithTransaction(conn, item.universe_id, new Date());
@@ -1249,7 +1239,7 @@ export class ItemAPI {
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE);
 
     item.obj_data = {
-      ...JSON.parse(item.obj_data as string),
+      ...item.obj_data,
       ...changes,
     };
 
@@ -1259,7 +1249,7 @@ export class ItemAPI {
 
       const queryString = `UPDATE item SET obj_data = ?, updated_at = ?, last_updated_by = ? WHERE id = ?;`;
       [data] = await conn.execute<ResultSetHeader>(queryString, [JSON.stringify(item.obj_data), new Date(), user.id, item.id]);
-      
+
       this.api.universe.putUpdatedAtWithTransaction(conn, item.universe_id, new Date());
     });
 

@@ -51,8 +51,8 @@ export default {
           // .some(row => row.universes.length < tierAllowance[user.plan][row.tier])
       ) : false;
       const homePage = await api.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', perms.READ, true).catch(handleAsNull(ForbiddenError));
-      console.log(JSON.parse(homePage?.obj_data as string).body)
-      res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: await tryRenderContent(req, JSON.parse(homePage?.obj_data as string).body, universe.shortname) });
+      const renderedHomePage = homePage?.obj_data.body ? await tryRenderContent(req, homePage?.obj_data.body, universe.shortname) : null;
+      res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: renderedHomePage });
     } catch (err) {
       // If the user is not authorized to view the universe, check if there is a public page to display instead
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {

@@ -62,7 +62,7 @@ exports.default = {
             }
             throw err;
         }
-        item.obj_data = JSON.parse(item.obj_data);
+        ;
         item.itemTypeName = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? ['Missing Category'])[0];
         item.itemTypeColor = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? [, , '#f3f3f3'])[2];
         let renderedBody = { type: 'text', content: '' };
