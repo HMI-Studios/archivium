@@ -58,13 +58,18 @@ div
           preview.classList.remove('hidden');
           rendered.classList.add('hidden');
         }
+
+        const query = new URLSearchParams(window.location.search);
         if (currentOpenUuid === uuid) {
           currentOpenUuid = null;
+          query.delete('note');
+          const { protocol, host, pathname, hash } = window.location;
+          const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
+          window.history.replaceState(null, '', newurl);
           return;
         };
         currentOpenUuid = uuid;
 
-        const query = new URLSearchParams(window.location.search);
         query.set('note', uuid);
         const { protocol, host, pathname, hash } = window.location;
         const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;

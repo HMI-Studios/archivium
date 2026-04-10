@@ -101,7 +101,7 @@ CREATE TABLE universe (
   is_public BOOLEAN NOT NULL,
   discussion_enabled BOOLEAN NOT NULL,
   discussion_open BOOLEAN NOT NULL,
-  obj_data TEXT NOT NULL,
+  obj_data JSON NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   PRIMARY KEY (id)
 );

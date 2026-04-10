@@ -54,7 +54,12 @@ exports.default = {
         try {
             const id = await api_1.default.universe.put(req.session.user, req.params.universeShortname, req.body);
             const universe = await api_1.default.universe.getOne(req.session.user, { 'universe.id': id }, utils_1.perms.READ);
-            res.redirect(`${(0, templates_1.universeLink)(req, universe.shortname)}`);
+            if (req.body.next) {
+                res.redirect(req.body.next);
+            }
+            else {
+                res.redirect(`${(0, templates_1.universeLink)(req, universe.shortname)}`);
+            }
         }
         catch (err) {
             if (err instanceof errors_1.ModelError) {

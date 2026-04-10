@@ -3,18 +3,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UniverseAPI = void 0;
 const errors_1 = require("../../errors");
 const utils_1 = require("../utils");
-const validateShortname = (shortname, reservedShortnames = ['create', 'news']) => {
+const validateShortname = (shortname, reservedShortnames = ['create', 'news', '_home', '_public']) => {
     if (shortname.length < 3 || shortname.length > 64) {
         return 'Shortnames must be between 3 and 64 characters long.';
     }
-    if (reservedShortnames.includes(shortname)) {
-        return 'This shortname is reserved and cannot be used.';
+    if (!/^[a-zA-Z0-9-]+$/.test(shortname)) {
+        return 'Shortnames can only contain letters, numbers, and hyphens.';
     }
     if (/^[-]|[-]$/.test(shortname)) {
         return 'Shortnames cannot start or end with a dash.';
     }
-    if (!/^[a-zA-Z0-9-]+$/.test(shortname)) {
-        return 'Shortnames can only contain letters, numbers, and hyphens.';
+    if (reservedShortnames.includes(shortname)) {
+        return 'This shortname is reserved and cannot be used.';
     }
     return null;
 };
@@ -49,7 +49,6 @@ class UniverseAPI {
                 throw new errors_1.NotFoundError();
             }
         }
-        universe.obj_data = JSON.parse(universe.obj_data);
         return universe;
     }
     async getMany(user, conditions = null, permissionLevel = utils_1.perms.READ, options = {}) {
@@ -137,14 +136,21 @@ class UniverseAPI {
     }
     // Does not throw if universe has no body..
     async getPublicBodyByShortname(shortname) {
-        const queryString = `SELECT obj_data FROM universe WHERE shortname = ?`;
-        const rows = (await (0, utils_1.executeQuery)(queryString, [shortname]))[0];
-        if (!rows)
+        const queryString = 'SELECT id, obj_data FROM universe WHERE shortname = ?';
+        const universe = (await (0, utils_1.executeQuery)(queryString, [shortname]))[0];
+        if (!universe)
             throw new errors_1.NotFoundError();
-        const body = JSON.parse(rows.obj_data)?.publicBody;
-        if (!body)
+        const publicPageEnabled = universe.obj_data.publicPage;
+        if (!publicPageEnabled)
             return;
-        return body;
+        const itemQueryString = `SELECT obj_data FROM item WHERE universe_id = ? AND shortname = '_public'`;
+        const item = (await (0, utils_1.executeQuery)(itemQueryString, [universe.id]))[0];
+        if (!item)
+            throw new errors_1.NotFoundError();
+        const publicBody = JSON.parse(item.obj_data)?.body;
+        if (!publicBody)
+            return;
+        return publicBody;
     }
     async getTotalStoredByShortname(shortname) {
         const queryString = `

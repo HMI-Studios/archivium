@@ -98,7 +98,7 @@ block content
 
   //- Tab buttons
   ul.navbarBtns#tabBtns.gap-1.scroll-x
-    if universe.obj_data.homeBody
+    if universe.obj_data.homePage && homePage
       li.navbarBtn#bodyBtn(data-tab='home')
         h3.navbarBtnLink.navbarText(onclick=`showTab('home')`) #{T('Home')}
     li.navbarBtn#bodyBtn(data-tab='items')
@@ -136,12 +136,9 @@ block content
 
   .tabs.mt-2
     .hidden( data-tab='home' )
-      if universe.obj_data.homeBody
+      if universe.obj_data.homePage && homePage
         .sheet
-          #home-body
-            script!= `window.content = ${JSON.stringify(universe.obj_data.homeBody)};`
-            script.
-              loadMarkdown(document.getElementById('home-body'), '#{universe.shortname}', window.content);
+          .markdown !{homePage.content}
 
     .container.hidden( data-tab='items' )
       if universe.obj_data.cats && Object.keys(universe.obj_data.cats).length

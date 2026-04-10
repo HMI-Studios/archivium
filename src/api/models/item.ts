@@ -685,10 +685,10 @@ export class ItemAPI {
   }
 
   /**
-   * 
-   * @param {*} user 
-   * @param {*} universe 
-   * @param {*} validate 
+   *
+   * @param {*} user
+   * @param {*} universe
+   * @param {*} validate
    * @returns {Promise<[number, QueryResult]>}
    */
   async getCountsByUniverse(user, universe, validate = true): Promise<[{ [type: string]: number }, number]> {
@@ -717,13 +717,15 @@ export class ItemAPI {
 
   async post(user: User | undefined, body, universeShortName: string): Promise<ResultSetHeader> {
     if (!user) throw new UnauthorizedError();
-    const { title, shortname, item_type, parent_id, obj_data } = body;
+    const { title, shortname, item_type, parent_id, obj_data, skipValidation } = body;
 
     try {
-      const shortnameError = this.api.universe.validateShortname(shortname);
-      if (shortnameError) throw new ValidationError(shortnameError);
+      if (!skipValidation) {
+        const shortnameError = this.api.universe.validateShortname(shortname);
+        if (shortnameError) throw new ValidationError(shortnameError);
+      }
 
-      const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, perms.WRITE);
+      const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, skipValidation ? perms.ADMIN : perms.WRITE);
       if (!title || !shortname || !item_type || !obj_data) throw new ValidationError('Missing required fields');
 
       let data: ResultSetHeader | undefined;
@@ -787,7 +789,7 @@ export class ItemAPI {
       item = await this.getOne(user, { 'item.id': itemId }, perms.WRITE);
 
       let dataChanged = false;
-      
+
       // Handle lineage data
       if (body.parents || body.children) {
         const existingParents: { [key: string]: Parent } = {};

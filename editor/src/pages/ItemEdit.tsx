@@ -295,8 +295,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     }} />;
   }
 
-  const itemTitles = itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
-  const itemTypes = (itemMap && categories) ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
+  const filteredItemKeys = Object.keys(itemMap).filter(key => itemMap[key].type in categories);
+  const itemTitles = itemMap ? filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
+  const itemTypes = (itemMap && categories) ? filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
 
   const tabs: Record<string, ReactElement | null> = {
     ...customTabs,
@@ -409,7 +410,10 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       {/* Editor Page */}
       <div className='d-flex justify-between align-baseline'>
         <h2>{T('Edit %s', item.title)}</h2>
-        <a className='link link-animated color-error' href={`${context.universeLink(universeShort)}/items/${itemShort}`}>{T('Discard Changes')}</a>
+        <a
+          className='link link-animated color-error'
+          href={item.shortname.startsWith('_') ? `${context.universeLink(universeShort)}/edit` : `${context.universeLink(universeShort)}/items/${itemShort}`}
+        >{T('Discard Changes')}</a>
       </div>
 
       {/* Document user icons */}
@@ -497,7 +501,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
           <SaveBtn<Item>
             data={{ ...item, obj_data: objData }}
             saveUrl={`/api/universes/${universeShort}/items/${itemShort}`}
-            previewUrl={`${context.universeLink(universeShort)}/items/${item.shortname}`}
+            previewUrl={item.shortname.startsWith('_') ? `${context.universeLink(universeShort)}/edit` : `${context.universeLink(universeShort)}/items/${item.shortname}`}
+            previewText={item.shortname.startsWith('_') ? T('Return') : undefined}
             onSave={(data) => {
               if (data.shortname !== itemShort) {
                 navigate(`/editor/universes/${universeShort}/items/${data.shortname}`);

@@ -4,6 +4,7 @@ import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } fro
 import { BaseOptions, Tier, executeQuery, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
 import { ItemEvent } from './item';
 import { User } from './user';
+import { IndexedDocument } from '../../lib/tiptapHelpers';
 
 export type UniverseAccessRequest<T = boolean> = {
   universe_id: number,
@@ -23,7 +24,7 @@ export type Universe = {
   is_public: boolean,
   discussion_enabled: boolean,
   discussion_open: boolean,
-  obj_data: Object | string,
+  obj_data: Record<string, any>,
   authors: { [id: number]: string },
   author_permissions: { [id: number]: perms },
   owner: string,
@@ -32,24 +33,21 @@ export type Universe = {
   sponsoring_user: number,
 };
 
-export type ParsedUniverse = Universe & { obj_data: Object };
-export type StringifiedUniverse = Universe & { obj_data: string };
-
-const validateShortname = (shortname: string, reservedShortnames: string[] = ['create', 'news']) => {
+const validateShortname = (shortname: string, reservedShortnames: string[] = ['create', 'news', '_home', '_public']) => {
   if (shortname.length < 3 || shortname.length > 64) {
     return 'Shortnames must be between 3 and 64 characters long.';
   }
 
-  if (reservedShortnames.includes(shortname)) {
-    return 'This shortname is reserved and cannot be used.';
+  if (!/^[a-zA-Z0-9-]+$/.test(shortname)) {
+    return 'Shortnames can only contain letters, numbers, and hyphens.';
   }
 
   if (/^[-]|[-]$/.test(shortname)) {
     return 'Shortnames cannot start or end with a dash.';
   }
 
-  if (!/^[a-zA-Z0-9-]+$/.test(shortname)) {
-    return 'Shortnames can only contain letters, numbers, and hyphens.';
+  if (reservedShortnames.includes(shortname)) {
+    return 'This shortname is reserved and cannot be used.';
   }
 
   return null;
@@ -71,7 +69,7 @@ export class UniverseAPI {
     this.api = api;
   }
 
-  async getOne(user: User | undefined, conditions, permissionLevel = perms.READ): Promise<ParsedUniverse> {
+  async getOne(user: User | undefined, conditions, permissionLevel = perms.READ): Promise<Universe> {
     if (!conditions) throw new ValidationError('Conditions are required.');
     const parsedConditions = parseData(conditions);
     const data = await this.getMany(user, parsedConditions, permissionLevel);
@@ -85,11 +83,10 @@ export class UniverseAPI {
         throw new NotFoundError();
       }
     }
-    universe.obj_data = JSON.parse(universe.obj_data);
     return universe;
   }
 
-  async getMany(user: User | undefined, conditions: any = null, permissionLevel = perms.READ, options: BaseOptions = {}): Promise<StringifiedUniverse[]> {
+  async getMany(user: User | undefined, conditions: any = null, permissionLevel = perms.READ, options: BaseOptions = {}): Promise<Universe[]> {
 
     if (options.sort && !options.forceSort) {
       const validSorts = { 'title': true, 'created_at': true, 'updated_at': true };
@@ -128,11 +125,11 @@ export class UniverseAPI {
       ${conditionString}
       GROUP BY universe.id
       ORDER BY ${options.sort ? `${options.sort} ${options.sortDesc ? 'DESC' : 'ASC'}` : 'updated_at DESC'}`;
-    const data = await executeQuery(queryString, conditions && conditions.values) as StringifiedUniverse[];
+    const data = await executeQuery(queryString, conditions && conditions.values) as Universe[];
     return data;
   }
 
-  getManyByAuthorId(user, authorId, permissionLevel = perms.WRITE): Promise<StringifiedUniverse[]> {
+  getManyByAuthorId(user, authorId, permissionLevel = perms.WRITE): Promise<Universe[]> {
     return this.getMany(user, {
       strings: [`
         EXISTS (
@@ -148,7 +145,7 @@ export class UniverseAPI {
     });
   }
 
-  getManyByAuthorName(user, authorName): Promise<StringifiedUniverse[]> {
+  getManyByAuthorName(user, authorName): Promise<Universe[]> {
     return this.getMany(user, {
       strings: [`
         EXISTS (
@@ -179,13 +176,18 @@ export class UniverseAPI {
   }
 
   // Does not throw if universe has no body..
-  async getPublicBodyByShortname(shortname: string): Promise<string | void> {
-    const queryString = `SELECT obj_data FROM universe WHERE shortname = ?`;
-    const rows = (await executeQuery(queryString, [shortname]))[0];
-    if (!rows) throw new NotFoundError();
-    const body = JSON.parse(rows.obj_data)?.publicBody;
-    if (!body) return;
-    return body;
+  async getPublicBodyByShortname(shortname: string): Promise<IndexedDocument | void> {
+    const queryString = 'SELECT id, obj_data FROM universe WHERE shortname = ?';
+    const universe = (await executeQuery(queryString, [shortname]))[0];
+    if (!universe) throw new NotFoundError();
+    const publicPageEnabled = universe.obj_data.publicPage;
+    if (!publicPageEnabled) return;
+    const itemQueryString = `SELECT obj_data FROM item WHERE universe_id = ? AND shortname = '_public'`;
+    const item = (await executeQuery(itemQueryString, [universe.id]))[0];
+    if (!item) throw new NotFoundError();
+    const publicBody = JSON.parse(item.obj_data)?.body;
+    if (!publicBody) return;
+    return publicBody;
   }
 
   async getTotalStoredByShortname(shortname: string): Promise<number> {

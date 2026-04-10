@@ -1,12 +1,13 @@
 import { ADDR_PREFIX } from '../../config';
 import api from '../../api';
 import { universeLink } from '../../templates';
-import { perms, getPfpUrl, tierAllowance, tierLimits } from '../../api/utils';
+import { perms, getPfpUrl, tierAllowance, tierLimits, handleAsNull } from '../../api/utils';
 import logger from '../../logger';
 import { RouteHandler } from '..';
 import { ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors';
 import { Comment } from '../../api/models/discussion';
 import { User } from '../../api/models/user';
+import { tryRenderContent } from '../../lib/renderContent';
 
 export default {
   async list(req, res) {
@@ -49,18 +50,20 @@ export default {
           .filter(row => row.tier > (universe.tier ?? 0))
           // .some(row => row.universes.length < tierAllowance[user.plan][row.tier])
       ) : false;
-      res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest });
+      const homePage = await api.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', perms.READ, true).catch(handleAsNull(ForbiddenError));
+      console.log(JSON.parse(homePage?.obj_data as string).body)
+      res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: await tryRenderContent(req, JSON.parse(homePage?.obj_data as string).body, universe.shortname) });
     } catch (err) {
       // If the user is not authorized to view the universe, check if there is a public page to display instead
       if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
-        const publicBody = await api.universe.getPublicBodyByShortname(req.params.universeShortname);
-        if (!publicBody && err instanceof UnauthorizedError) {
+        const publicPage = await api.universe.getPublicBodyByShortname(req.params.universeShortname);
+        if (!publicPage && err instanceof UnauthorizedError) {
           res.status(401);
           req.forceLogin = true;
           // req.useExQuery = true; // TODO why is this here?
           return;
         }
-        return res.prepareRender('privateUniverse', { shortname: req.params.universeShortname, accessRequest, publicBody });
+        return res.prepareRender('privateUniverse', { shortname: req.params.universeShortname, accessRequest, publicPage: await tryRenderContent(req, publicPage, req.params.universeShortname) });
       }
       throw err;
     }
@@ -79,9 +82,11 @@ export default {
   },
 
   async edit(req, res) {
-    const fetchedUniverse = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.WRITE);
+    const fetchedUniverse = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.ADMIN);
     const universe = {...fetchedUniverse, ...(req.body ?? {}), shortname: fetchedUniverse.shortname, newShort: req.body?.shortname ?? fetchedUniverse.shortname};
-    res.prepareRender('editUniverse', { universe, error: res.error });
+    const homePage = await api.item.getByUniverseAndItemShortnames(req.session.user, universe.shortname, '_home', perms.READ, true).catch(handleAsNull(ForbiddenError));
+    const publicPage = await api.item.getByUniverseAndItemShortnames(req.session.user, universe.shortname, '_public', perms.READ, true).catch(handleAsNull(ForbiddenError));
+    res.prepareRender('editUniverse', { universe, error: res.error, homePage, publicPage });
   },
 
   async createDiscussionThread(req, res) {

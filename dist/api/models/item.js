@@ -545,12 +545,14 @@ class ItemAPI {
     async post(user, body, universeShortName) {
         if (!user)
             throw new errors_1.UnauthorizedError();
-        const { title, shortname, item_type, parent_id, obj_data } = body;
+        const { title, shortname, item_type, parent_id, obj_data, skipValidation } = body;
         try {
-            const shortnameError = this.api.universe.validateShortname(shortname);
-            if (shortnameError)
-                throw new errors_1.ValidationError(shortnameError);
-            const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, utils_1.perms.WRITE);
+            if (!skipValidation) {
+                const shortnameError = this.api.universe.validateShortname(shortname);
+                if (shortnameError)
+                    throw new errors_1.ValidationError(shortnameError);
+            }
+            const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, skipValidation ? utils_1.perms.ADMIN : utils_1.perms.WRITE);
             if (!title || !shortname || !item_type || !obj_data)
                 throw new errors_1.ValidationError('Missing required fields');
             let data;

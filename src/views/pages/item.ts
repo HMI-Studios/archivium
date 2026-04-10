@@ -25,7 +25,6 @@ export default {
       search,
     });
     const universeCats = universes.reduce((cats, universe) => {
-      universe.obj_data = JSON.parse(universe.obj_data);
       return { ...cats, [universe.id]: universe.obj_data['cats'] };
     }, {});
     const universe = req.query.universe ? await api.universe.getOne(req.session.user, { 'universe.shortname': req.query.universe }) : null;
