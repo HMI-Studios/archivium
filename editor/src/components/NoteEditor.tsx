@@ -16,7 +16,7 @@ export type NoteEditorProps = {
   universeLink: (universe: string) => string,
 };
 
-export type ItemOptionEntry = { title: string, universe: string, universe_short: string };
+export type ItemOptionEntry = { title: string, shortname: string, universe: string, universe_short: string };
 
 const itemExistsCache: { [universe: string]: { [item: string]: boolean } } = {};
 
@@ -51,9 +51,9 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
       const noteData = await fetchAsync(`/api/users/${user.username}/notes/${noteUuid}`) as Note;
 
       const itemMapPromise = fetchData('/api/items', (items) => {
-        const newItemMap: Record<number, ItemOptionEntry> = {};
+        const newItemMap: Record<string, ItemOptionEntry> = {};
         for (const { shortname, title, universe, universe_short } of items) {
-          newItemMap[shortname] = { title, universe, universe_short };
+          newItemMap[`${universe_short}/${shortname}`] = { title, shortname, universe, universe_short };
         }
         setItemMap(newItemMap);
       });
@@ -93,11 +93,11 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
   }, [editor, initContent]);
 
   const itemTitles = useMemo(
-    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].title }), {}) : {},
+    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {},
     [itemMap],
   );
   const itemUniverses = useMemo(
-    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [`${itemMap[key].universe_short}/${key}`]: itemMap[key].universe }), {}) : {},
+    () => itemMap ? Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].universe }), {}) : {},
     [itemMap],
   );
 
@@ -161,7 +161,7 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
 
             <label>{T('Linked items')}:</label>
             <ul className='ma-0 pa-0'>
-              {note.items && note.items.map(([title, shortname, _, universe_short]) => (
+              {note.items && note.items.map(([title, shortname,, universe_short]) => (
                 <li key={`${universe_short}/${shortname}`} className='d-flex align-center'>
                   <a className='material-symbols-outlined link' onClick={() => {
                     if (!note.items) return;
@@ -178,11 +178,12 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
             </ul>
 
             <SearchableSelect
+              id='note-items'
               options={itemTitles}
               onSelect={(value) => {
                 if (!value) return;
                 const newItems = structuredClone(note.items ?? []);
-                newItems.push([itemMap[value].title, value, itemMap[value].universe, itemMap[value].universe_short]);
+                newItems.push([itemMap[value].title, itemMap[value].shortname, itemMap[value].universe, itemMap[value].universe_short]);
                 setNote({ ...note, items: newItems })
               }}
               groups={itemUniverses}
@@ -215,7 +216,7 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
               window.location.href = '/notes';
             }}>Delete</button>
 
-            <a className='button-link' href={backLink}>Back to List</a>
+            <a id='back-to-list' className='button-link' href={backLink}>Back to List</a>
           </div>
         </div>
       </div>

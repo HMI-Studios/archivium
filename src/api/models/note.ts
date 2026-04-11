@@ -277,7 +277,7 @@ export class NoteAPI {
   async linkToItem(user: User | undefined, universeShortname: string, itemShortname: string, noteUuid: string): Promise<void> {
     if (!noteUuid) throw new ValidationError('Note UUID is required');
     if (!user) throw new UnauthorizedError();
-    const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true)
+    const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.READ, true)
     const note = await this.getOne(user, noteUuid);
 
     const queryString = `INSERT INTO itemnote (item_id, note_id) VALUES (?, ?)`;

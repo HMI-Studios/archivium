@@ -204,5 +204,5 @@ const errorLogger: express.ErrorRequestHandler = (err, req, res, next) => {
 app.use(errorLogger);
 
 app.listen(PORT, () => {
-  logger.info(`Example app listening at http://localhost:${PORT}`);
+  logger.info(`Server listening at http://localhost:${PORT}`);
 });

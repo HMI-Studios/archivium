@@ -221,7 +221,7 @@ class NoteAPI {
             throw new errors_1.ValidationError('Note UUID is required');
         if (!user)
             throw new errors_1.UnauthorizedError();
-        const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
+        const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.READ, true);
         const note = await this.getOne(user, noteUuid);
         const queryString = `INSERT INTO itemnote (item_id, note_id) VALUES (?, ?)`;
         await (0, utils_1.executeQuery)(queryString, [item.id, note.id]);
