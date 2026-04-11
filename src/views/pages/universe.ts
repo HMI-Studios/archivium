@@ -123,7 +123,7 @@ export default {
   async itemList(req, res) {
     const search = req.getQueryParam('search');
     const universe = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname });
-    const items = await api.item.getByUniverseShortname(req.session.user, req.params.universeShortname, perms.READ, {
+    const items = (await api.item.getByUniverseShortname(req.session.user, req.params.universeShortname, perms.READ, {
       sort: req.getQueryParam('sort'),
       sortDesc: req.getQueryParam('sort_order') === 'desc',
       limit: req.getQueryParamAsNumber('limit'),
@@ -131,7 +131,7 @@ export default {
       tag: req.getQueryParam('tag'),
       author: req.getQueryParam('author'),
       search,
-    });
+    })).filter(item => !item.shortname.startsWith('_'));
     res.prepareRender('universeItemList', {
       items: items.map(item => ({ ...item, itemTypeName: ((universe.obj_data['cats'] ?? {})[item.item_type] ?? ['Missing Category'])[0] })),
       universe,

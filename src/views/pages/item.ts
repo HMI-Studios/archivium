@@ -14,7 +14,7 @@ export default {
   async list(req, res) {
     const search = req.getQueryParam('search');
     const universes = await api.universe.getMany(req.session.user);
-    const items = await api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
+    const items = (await api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
       sort: req.getQueryParam('sort'),
       sortDesc: req.getQueryParam('sort_order') === 'desc',
       limit: req.getQueryParamAsNumber('limit'),
@@ -23,7 +23,7 @@ export default {
       universe: req.getQueryParam('universe'),
       author: req.getQueryParam('author'),
       search,
-    });
+    })).filter(item => !item.shortname.startsWith('_'));
     const universeCats = universes.reduce((cats, universe) => {
       return { ...cats, [universe.id]: universe.obj_data['cats'] };
     }, {});
