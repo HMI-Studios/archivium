@@ -57,7 +57,7 @@ block content
 
   -
     const canComment = contextUser && (
-      (universe.public && universe.discussion_open)
+      (universe.is_public && universe.discussion_open)
       || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
     );
     const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;

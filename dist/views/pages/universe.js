@@ -42,7 +42,7 @@ exports.default = {
                 .filter(row => row.tier > (universe.tier ?? 0))
             // .some(row => row.universes.length < tierAllowance[user.plan][row.tier])
             ) : false;
-            const homePage = await api_1.default.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', utils_1.perms.READ, true).catch((0, utils_1.handleAsNull)(errors_1.ForbiddenError));
+            const homePage = await api_1.default.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', utils_1.perms.READ, true).catch((0, utils_1.handleAsNull)([errors_1.ForbiddenError, errors_1.UnauthorizedError]));
             const renderedHomePage = homePage?.obj_data.body ? await (0, renderContent_1.tryRenderContent)(req, homePage?.obj_data.body, universe.shortname) : null;
             res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: renderedHomePage });
         }

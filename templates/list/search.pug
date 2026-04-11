@@ -45,7 +45,7 @@ block content
                 b #{T('Updated')}: 
                 | #{formatDate(universe.updated_at)}
               | —
-              span #{universe.public ? 'Public' : 'Private'}
+              span #{universe.is_public ? 'Public' : 'Private'}
     each item in items
       .card.sheet.gap-4.align-start(data-goto=`${universeLink(item.universe_short)}/items/${item.shortname}`)
         .d-flex.flex-col.grow-1

@@ -105,7 +105,7 @@ block content
       h3.navbarBtnLink.navbarText(onclick=`showTab('items')`) #{T('Items')}
     li.navbarBtn#bodyBtn(data-tab='authors')
       h3.navbarBtnLink.navbarText(onclick=`showTab('authors')`) #{T('Authors')}
-    if !universe.public
+    if !universe.is_public
       li.navbarBtn#bodyBtn(data-tab='viewers')
         h3.navbarBtnLink.navbarText(onclick=`showTab('viewers')`) #{T('Viewers')}
     if universe.discussion_enabled
