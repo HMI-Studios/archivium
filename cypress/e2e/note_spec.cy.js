@@ -43,15 +43,17 @@ describe('Note spec', () => {
   it('links note to an item, sees the note on that item\'s notes page', () => {
     cy.login('testwriter');
     cy.visit('/notes');
-    cy.get('#note-list').contains('Public Test Note').click();
+    cy.get('#note-list').contains('Public Test Note').parent().find('a').contains('Edit').click();
 
-    cy.get('#note-control-tabs .edit').click();
     cy.get('#note-items input').first().type('Test Character');
     cy.get('.options-container .option').filter(':visible').click();
-    cy.get('#save').click();
+    cy.intercept('PUT', '/api/users/testwriter/notes/*').as('request');
+    cy.get('#save-changes').click();
+    cy.wait('@request');
+    cy.get('#back-to-list').click();
 
-    cy.get('#note-items-list').children().should('have.length', 1);
-    cy.get('#note-items-list').contains('Test Character').click();
+    cy.get('#note-list').contains('Public Test Note').parents('.card').find('.item-links span').children('a').should('have.length', 1);
+    cy.get('#note-list').contains('Public Test Note').parents('.card').find('.item-links span').children('a').contains('Test Character').click();
 
     cy.get('#tabBtns').contains('Notes (Hidden)').click();
     cy.get('#note-list').children('.card').should('have.length', 1);
@@ -61,13 +63,15 @@ describe('Note spec', () => {
   it('unlinks the note, no longer sees it on that item\'s notes page', () => {
     cy.login('testwriter');
     cy.visit('/notes');
-    cy.get('#note-list').contains('Public Test Note').click();
+    cy.get('#note-list').contains('Public Test Note').parent().find('a').contains('Edit').click();
 
-    cy.get('#note-control-tabs .edit').click();
     cy.get('#note-items-edit').contains('Test Character').siblings('a').contains('delete').click();
-    cy.get('#save').click();
+    cy.intercept('PUT', '/api/users/testwriter/notes/*').as('request');
+    cy.get('#save-changes').click();
+    cy.wait('@request');
+    cy.get('#back-to-list').click();
 
-    cy.get('#note-items-list').children().should('have.length', 0);
+    cy.get('#note-list').contains('Public Test Note').parents('.card').find('.item-links span').should('not.exist');
 
     cy.visit('/universes/public-test-universe/items/test-character');
     cy.get('#tabBtns [data-tab=notes]').should('not.exist');
@@ -84,7 +88,6 @@ describe('Note spec', () => {
     cy.get('#preview-btn').click();
 
     cy.get('#tabBtns [data-tab=notes]').should('have.text', 'Notes (Hidden)');
-    cy.get('#action-bar').contains('Edit').click();
 
     cy.logout();
 
@@ -95,13 +98,15 @@ describe('Note spec', () => {
   it('adds a tag to the note', () => {
     cy.login('testwriter');
     cy.visit('/notes');
-    cy.get('#note-list').contains('Public Test Note').click();
+    cy.get('#note-list').contains('Public Test Note').parent().find('a').contains('Edit').click();
 
-    cy.get('#note-control-tabs .edit').click();
-    cy.get('#note_tags').type(' cypress')
-    cy.get('#save').click();
+    cy.get('#tags').type('cypress ');
+    cy.intercept('PUT', '/api/users/testwriter/notes/*').as('request');
+    cy.get('#save-changes').click();
+    cy.wait('@request');
+    cy.get('#back-to-list').click();
 
-    cy.get('#note-controls .preview .tags').should('contain', '#cypress');
+    cy.get('#note-list').contains('Public Test Note').parents('.card').find('.tags').should('contain', '#cypress');
   });
 
   it('tries filtering notes by the tag', () => {
@@ -116,13 +121,15 @@ describe('Note spec', () => {
   it('removes the tag from the note', () => {
     cy.login('testwriter');
     cy.visit('/notes');
-    cy.get('#note-list').contains('Public Test Note').click();
+    cy.get('#note-list').contains('Public Test Note').parent().find('a').contains('Edit').click();
 
-    cy.get('#note-control-tabs .edit').click();
-    cy.get('#note_tags').clear();
-    cy.get('#note_tags').type('{ctrl}a{backspace}test public');
-    cy.get('#save').click();
+    cy.get('#tags').siblings('div').children().contains('#cypress').click();
+    cy.get('#tags').type('test public ');
+    cy.intercept('PUT', '/api/users/testwriter/notes/*').as('request');
+    cy.get('#save-changes').click();
+    cy.wait('@request');
+    cy.get('#back-to-list').click();
 
-    cy.get('#note-controls .preview .tags').should('not.contain', '#cypress');
+    cy.get('#note-list').contains('Public Test Note').parents('.card').find('.tags').should('not.contain', '#cypress');
   });
 });

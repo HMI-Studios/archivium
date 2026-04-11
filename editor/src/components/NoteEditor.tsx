@@ -160,7 +160,7 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
             />
 
             <label>{T('Linked items')}:</label>
-            <ul className='ma-0 pa-0'>
+            <ul id='note-items-edit' className='ma-0 pa-0'>
               {note.items && note.items.map(([title, shortname,, universe_short]) => (
                 <li key={`${universe_short}/${shortname}`} className='d-flex align-center'>
                   <a className='material-symbols-outlined link' onClick={() => {
