@@ -122,8 +122,19 @@ describe('Universe spec', () => {
 
     cy.get('h1').contains('Cypress Universe').should('exist');
     cy.get('#action-bar').contains('Edit').click();
-    cy.get('#public-body .CodeMirror').type('This is the public page for the Cypress Universe.');
-    cy.get('#save-btn').click();
+    cy.get('#public-body .switch').click();
+    cy.intercept('GET', '/api/universes/cypress-universe/items/_public').as('request');
+    cy.get('#public-body button').click();
+    cy.wait('@request');
+
+    cy.get('#add-tab').click();
+    cy.get('.modal select').select('Main Text');
+    cy.get('.modal button').contains('New Tab').click();
+
+    cy.get('.tiptap-editor .tiptap').should('be.visible');
+    cy.get('.tiptap-editor .tiptap').type('This is the public page for the Cypress Universe.');
+
+    cy.get('#preview-btn').click();
   });
 
   it('requests access to new universe as reader, admin approves', () => {
@@ -184,7 +195,7 @@ describe('Universe spec', () => {
     cy.get('.card-list .card h3').contains('Cypress Universe').should('not.exist');
 
     cy.visit('/universes/cypress-universe');
-    cy.get('.page #md-body .markdown').should('have.text', 'This is the public page for the Cypress Universe.');
+    cy.get('.page .markdown').should('have.text', 'This is the public page for the Cypress Universe.');
 
   });
 

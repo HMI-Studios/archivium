@@ -523,7 +523,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
                     backgroundColor: user.color ?? '',
                   }} />
                 ))}
-                <h3 className='navbarBtnLink navbarText ma-0 material-symbols-outlined heavy' onClick={() =>  setCurrentModal('newTab')}>add</h3>
+                <h3 id='add-tab' className='navbarBtnLink navbarText ma-0 material-symbols-outlined heavy' onClick={() =>  setCurrentModal('newTab')}>add</h3>
               </li>
             </ul>
           </div>
