@@ -89,7 +89,7 @@ export default {
       commenters[user.id] = user;
     }
 
-    const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, {}, true) as [Note[], User[]];
+    const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true) as [Note[], User[]];
     const noteAuthors = {};
     for (const user of noteUsers) {
       user.pfpUrl = getPfpUrl(user);

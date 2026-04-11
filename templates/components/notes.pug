@@ -29,6 +29,11 @@ div
         .rendered-body.hidden
           .d-flex.justify-center.pa-4
             .loader
+        if note.items
+          small.item-links #{T('Linked to')}: 
+            -
+              const itemLinks = note.items.map(row => [row[0], `${universeLink(row[3])}/items/${row[1]}`]);
+            +linkList(itemLinks)
         if note.tags
           small.d-flex.flex-wrap.gap-1.tags
             each noteTag in note.tags

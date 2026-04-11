@@ -82,7 +82,7 @@ exports.default = {
             delete user.email;
             commenters[user.id] = user;
         }
-        const [notes, noteUsers] = await api_1.default.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, {}, true);
+        const [notes, noteUsers] = await api_1.default.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true);
         const noteAuthors = {};
         for (const user of noteUsers) {
             user.pfpUrl = (0, utils_1.getPfpUrl)(user);

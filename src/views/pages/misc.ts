@@ -60,7 +60,7 @@ export default {
   async notes(req, res) {
     const user = req.session.user;
     if (!user) throw new UnauthorizedError();
-    const notes = await api.note.getByUsername(user, user.username);
+    const notes = await api.note.getByUsername(user, user.username, {}, { connections: true });
     const noteAuthors = { [user.id]: user };
     res.prepareRender('notes', {
       notes,
