@@ -183,6 +183,11 @@ export default function NoteEditor({ noteUuid, universeLink }: NoteEditorProps) 
               onSelect={(value) => {
                 if (!value) return;
                 const newItems = structuredClone(note.items ?? []);
+                for (const [, itemShort,, universeShort] of newItems) {
+                  if (itemShort === itemMap[value].shortname && universeShort === itemMap[value].universe_short) {
+                    return;
+                  }
+                }
                 newItems.push([itemMap[value].title, itemMap[value].shortname, itemMap[value].universe, itemMap[value].universe_short]);
                 setNote({ ...note, items: newItems })
               }}
