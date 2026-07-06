@@ -1,11 +1,16 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("@tiptap/core");
 const suggestion_1 = require("@tiptap/suggestion");
 const state_1 = require("@tiptap/pm/state");
+const tippy_js_1 = __importDefault(require("tippy.js"));
 const MentionPluginKey = new state_1.PluginKey('itemMentionSuggestion');
 function renderSuggestionList() {
     let container;
+    let popup;
     let items = [];
     let selectedIndex = 0;
     let command = () => { };
@@ -17,7 +22,7 @@ function renderSuggestionList() {
     }
     function renderItems() {
         container.innerHTML = '';
-        items.forEach((item, i) => {
+        items.forEach((item) => {
             const option = document.createElement('div');
             option.className = 'option';
             option.textContent = item.title;
@@ -29,28 +34,32 @@ function renderSuggestionList() {
         });
         selectItem(0);
     }
-    function updatePosition(clientRect) {
-        const rect = clientRect?.();
-        if (!rect)
-            return;
-        container.style.top = `${rect.bottom + window.scrollY}px`;
-        container.style.left = `${rect.left + window.scrollX}px`;
-    }
     return {
         onStart: (props) => {
             items = props.items;
             command = props.command;
             container = document.createElement('div');
             container.className = 'options-container mention-suggestions';
-            document.body.appendChild(container);
             renderItems();
-            updatePosition(props.clientRect);
+            popup = (0, tippy_js_1.default)('body', {
+                getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
+                appendTo: () => document.body,
+                content: container,
+                showOnCreate: true,
+                interactive: true,
+                trigger: 'manual',
+                placement: 'bottom-start',
+                arrow: false,
+                offset: [0, 4],
+            });
         },
         onUpdate: (props) => {
             items = props.items;
             command = props.command;
             renderItems();
-            updatePosition(props.clientRect);
+            popup[0].setProps({
+                getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
+            });
         },
         onKeyDown: ({ event }) => {
             if (!items.length)
@@ -67,14 +76,10 @@ function renderSuggestionList() {
                 command(items[selectedIndex]);
                 return true;
             }
-            if (event.key === 'Escape') {
-                container.remove();
-                return true;
-            }
             return false;
         },
         onExit: () => {
-            container?.remove();
+            popup[0].destroy();
         },
     };
 }

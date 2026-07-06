@@ -1219,8 +1219,13 @@ header .badge {
   background-color: var(--option-hover-color);
 }
 
-/* @-mention suggestion dropdown in the item editor */
+/*
+ * @-mention suggestion dropdown in the item editor. This is rendered as tippy.js
+ * popup content, so it must not use the fixed positioning that .options-container
+ * normally has for its manually-positioned (non-tippy) uses.
+ */
 .mention-suggestions {
+  position: static;
   min-width: 10rem;
   font-size: 0.875rem;
 }

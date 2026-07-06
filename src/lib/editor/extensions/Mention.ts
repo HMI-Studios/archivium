@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { Suggestion, SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
+import tippy, { Instance as TippyInstance, Props as TippyProps } from 'tippy.js';
 
 export interface MentionItem {
   shortname: string;
@@ -16,6 +17,7 @@ const MentionPluginKey = new PluginKey('itemMentionSuggestion');
 
 function renderSuggestionList() {
   let container: HTMLDivElement;
+  let popup: TippyInstance<TippyProps>[];
   let items: MentionItem[] = [];
   let selectedIndex = 0;
   let command: (item: MentionItem) => void = () => {};
@@ -29,7 +31,7 @@ function renderSuggestionList() {
 
   function renderItems() {
     container.innerHTML = '';
-    items.forEach((item, i) => {
+    items.forEach((item) => {
       const option = document.createElement('div');
       option.className = 'option';
       option.textContent = item.title;
@@ -42,29 +44,35 @@ function renderSuggestionList() {
     selectItem(0);
   }
 
-  function updatePosition(clientRect: SuggestionProps<MentionItem>['clientRect']) {
-    const rect = clientRect?.();
-    if (!rect) return;
-    container.style.top = `${rect.bottom + window.scrollY}px`;
-    container.style.left = `${rect.left + window.scrollX}px`;
-  }
-
   return {
     onStart: (props: SuggestionProps<MentionItem>) => {
       items = props.items;
       command = props.command;
+
       container = document.createElement('div');
       container.className = 'options-container mention-suggestions';
-      document.body.appendChild(container);
       renderItems();
-      updatePosition(props.clientRect);
+
+      popup = tippy('body', {
+        getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
+        appendTo: () => document.body,
+        content: container,
+        showOnCreate: true,
+        interactive: true,
+        trigger: 'manual',
+        placement: 'bottom-start',
+        arrow: false,
+        offset: [0, 4],
+      });
     },
 
     onUpdate: (props: SuggestionProps<MentionItem>) => {
       items = props.items;
       command = props.command;
       renderItems();
-      updatePosition(props.clientRect);
+      popup[0].setProps({
+        getReferenceClientRect: () => props.clientRect?.() ?? new DOMRect(),
+      });
     },
 
     onKeyDown: ({ event }: SuggestionKeyDownProps) => {
@@ -82,16 +90,12 @@ function renderSuggestionList() {
         command(items[selectedIndex]);
         return true;
       }
-      if (event.key === 'Escape') {
-        container.remove();
-        return true;
-      }
 
       return false;
     },
 
     onExit: () => {
-      container?.remove();
+      popup[0].destroy();
     },
   };
 }
