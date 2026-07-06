@@ -16,6 +16,7 @@ const Link_1 = __importDefault(require("./extensions/Link"));
 const ToC_1 = __importDefault(require("./extensions/ToC"));
 const Heading_1 = __importDefault(require("./extensions/Heading"));
 const IFrame_1 = __importDefault(require("./extensions/IFrame"));
+const Mention_1 = __importDefault(require("./extensions/Mention"));
 function extractLinkData(href) {
     const data = {};
     if (href.startsWith('@')) {
@@ -76,6 +77,11 @@ const editorExtensions = (editMode, context, collabOptions) => {
             defaultAlignment: 'left',
         }),
     ];
+    if (editMode) {
+        extensions.push(Mention_1.default.configure({
+            items: () => context?.items?.() ?? {},
+        }));
+    }
     if (collabOptions) {
         const { ydoc, field, provider } = collabOptions;
         extensions.push(extension_collaboration_1.default.configure({

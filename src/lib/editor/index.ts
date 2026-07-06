@@ -9,6 +9,7 @@ import Link, { ResolveResult } from './extensions/Link';
 import ToC from './extensions/ToC';
 import Heading from './extensions/Heading';
 import IFrame from './extensions/IFrame';
+import Mention from './extensions/Mention';
 import { HocuspocusProvider } from '@hocuspocus/provider';
 
 import * as Y from 'yjs';
@@ -18,6 +19,7 @@ export interface TiptapContext {
   universeLink: (universe: string) => string;
   itemExists: (universe: string, item: string) => boolean;
   headings: { title: string, level: number }[],
+  items?: () => Record<string, { title: string }>;
 }
 
 export type LinkData = {
@@ -93,6 +95,12 @@ export const editorExtensions = (editMode: boolean, context?: TiptapContext, col
       defaultAlignment: 'left',
     }),
   ];
+
+  if (editMode) {
+    extensions.push(Mention.configure({
+      items: () => context?.items?.() ?? {},
+    }));
+  }
 
   if (collabOptions) {
     const { ydoc, field, provider } = collabOptions;

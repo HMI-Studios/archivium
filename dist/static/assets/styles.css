@@ -1219,6 +1219,16 @@ header .badge {
   background-color: var(--option-hover-color);
 }
 
+/* @-mention suggestion dropdown in the item editor */
+.mention-suggestions {
+  min-width: 10rem;
+  font-size: 0.875rem;
+}
+
+.mention-suggestions .option.is-selected {
+  background-color: var(--option-hover-color);
+}
+
 /* Slider Switches */
 .switch {
   position: relative;
