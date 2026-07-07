@@ -146,6 +146,49 @@ class Embedder {
             estimatedBytes: chunkCount * VECTOR_DIMENSIONS * 4,
         };
     }
+    // Must never throw: this backs a page-render path that should degrade silently
+    // (empty list) rather than break the item page if the embedding subsystem is down.
+    async getRelatedItems(user, itemId, universeId, limit = 6) {
+        try {
+            const [ownChunk] = await (0, utils_1.executeQuery)(`SELECT id FROM itemembeddedchunks WHERE item_id = ? AND scope = 'item' LIMIT 1`, [itemId]);
+            if (!ownChunk)
+                return [];
+            const { points } = await qdrantClient.query(COLLECTION_NAME, {
+                query: ownChunk.id,
+                limit: limit * 5,
+                filter: {
+                    must: [{ key: 'universeId', match: { value: universeId } }],
+                    must_not: [{ key: 'itemId', match: { value: itemId } }],
+                },
+            });
+            if (points.length === 0)
+                return [];
+            const chunkIds = points.map(p => Number(p.id));
+            const chunks = await (0, utils_1.executeQuery)(`SELECT id, item_id FROM itemembeddedchunks WHERE id IN (${chunkIds.map(() => '?').join(',')})`, chunkIds);
+            const itemIdByChunkId = new Map(chunks.map(c => [c.id, c.item_id]));
+            const bestScoreByItem = new Map();
+            for (const point of points) {
+                const relatedItemId = itemIdByChunkId.get(Number(point.id));
+                if (relatedItemId === undefined)
+                    continue;
+                const best = bestScoreByItem.get(relatedItemId);
+                if (best === undefined || point.score > best)
+                    bestScoreByItem.set(relatedItemId, point.score);
+            }
+            const rankedIds = [...bestScoreByItem.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, limit)
+                .map(([id]) => id);
+            if (rankedIds.length === 0)
+                return [];
+            const items = await Promise.all(rankedIds.map(id => api_1.default.item.getOne(user, { 'item.id': id }, utils_1.perms.READ).catch(() => null)));
+            return items.filter((item) => !!item);
+        }
+        catch (err) {
+            logger_1.default.error(`Failed to get related items for item ${itemId}: ${err}`);
+            return [];
+        }
+    }
     async nextJob() {
         const job = this.queue.shift();
         if (!job)

@@ -1,7 +1,7 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { Item } from './api/models/item';
 import { Universe } from './api/models/universe';
-import { executeQuery } from './api/utils';
+import { executeQuery, perms } from './api/utils';
 import { createHash } from './lib/hashUtils';
 import { getTextContent, IndexedDocument, indexedToJson } from './lib/tiptapHelpers';
 import logger from './logger';
@@ -195,6 +195,57 @@ class Embedder {
       itemCount: Number(row?.itemCount ?? 0),
       estimatedBytes: chunkCount * VECTOR_DIMENSIONS * 4,
     };
+  }
+
+  // Must never throw: this backs a page-render path that should degrade silently
+  // (empty list) rather than break the item page if the embedding subsystem is down.
+  public async getRelatedItems(user: User | undefined, itemId: number, universeId: number, limit = 6): Promise<Item[]> {
+    try {
+      const [ownChunk] = await executeQuery(
+        `SELECT id FROM itemembeddedchunks WHERE item_id = ? AND scope = 'item' LIMIT 1`,
+        [itemId],
+      );
+      if (!ownChunk) return [];
+
+      const { points } = await qdrantClient.query(COLLECTION_NAME, {
+        query: ownChunk.id,
+        limit: limit * 5,
+        filter: {
+          must: [{ key: 'universeId', match: { value: universeId } }],
+          must_not: [{ key: 'itemId', match: { value: itemId } }],
+        },
+      });
+      if (points.length === 0) return [];
+
+      const chunkIds = points.map(p => Number(p.id));
+      const chunks = await executeQuery(
+        `SELECT id, item_id FROM itemembeddedchunks WHERE id IN (${chunkIds.map(() => '?').join(',')})`,
+        chunkIds,
+      );
+      const itemIdByChunkId = new Map(chunks.map(c => [c.id, c.item_id]));
+
+      const bestScoreByItem = new Map<number, number>();
+      for (const point of points) {
+        const relatedItemId = itemIdByChunkId.get(Number(point.id));
+        if (relatedItemId === undefined) continue;
+        const best = bestScoreByItem.get(relatedItemId);
+        if (best === undefined || point.score > best) bestScoreByItem.set(relatedItemId, point.score);
+      }
+
+      const rankedIds = [...bestScoreByItem.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([id]) => id);
+      if (rankedIds.length === 0) return [];
+
+      const items = await Promise.all(rankedIds.map(id =>
+        api.item.getOne(user, { 'item.id': id }, perms.READ).catch(() => null)
+      ));
+      return items.filter((item): item is Item => !!item);
+    } catch (err) {
+      logger.error(`Failed to get related items for item ${itemId}: ${err}`);
+      return [];
+    }
   }
 
   private async nextJob() {

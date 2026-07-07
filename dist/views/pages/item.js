@@ -9,6 +9,7 @@ const errors_1 = require("../../errors");
 const familyTree_1 = require("../../lib/familyTree");
 const renderContent_1 = require("../../lib/renderContent");
 const templates_1 = require("../../templates");
+const embedding_1 = __importDefault(require("../../embedding"));
 exports.default = {
     async list(req, res) {
         const search = req.getQueryParam('search');
@@ -89,11 +90,17 @@ exports.default = {
             delete user.email;
             noteAuthors[user.id] = user;
         }
+        const relatedItems = universe.obj_data.semanticSearchEnabled
+            ? (await embedding_1.default.getRelatedItems(req.session.user, item.id, universe.id)).map(relatedItem => ({
+                ...relatedItem,
+                itemTypeName: ((universe.obj_data['cats'] ?? {})[relatedItem.item_type] ?? ['Missing Category'])[0],
+            }))
+            : [];
         res.prepareRender('item', {
             item, universe, tab: req.query.tab, comments, commenters, notes, noteAuthors, renderedBody,
             commentAction: `${(0, templates_1.universeLink)(req, universe.shortname)}/items/${item.shortname}/comment`,
             noteBaseRoute: `/api/universes/${universe.shortname}/items/${item.shortname}/notes`,
-            family, familyLayout,
+            family, familyLayout, relatedItems,
         });
     },
     async delete(req, res) {
