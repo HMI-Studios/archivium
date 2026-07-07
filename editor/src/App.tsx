@@ -1,7 +1,9 @@
+import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router';
-import ChapterEdit from './pages/ChapterEdit';
-import ItemEdit from './pages/ItemEdit';
-import NoteEdit from './pages/NoteEdit';
+
+const ChapterEdit = lazy(() => import(/* webpackChunkName: "chapter-edit" */ './pages/ChapterEdit'));
+const ItemEdit = lazy(() => import(/* webpackChunkName: "item-edit" */ './pages/ItemEdit'));
+const NoteEdit = lazy(() => import(/* webpackChunkName: "note-edit" */ './pages/NoteEdit'));
 
 export type AppProps = {
   displayUniverse: string,
@@ -21,24 +23,26 @@ export default function App({ displayUniverse, addrPrefix, domain, providerAddre
   }
 
   return (
-    <Routes>
-      <Route path='editor'>
-        <Route path='universes'>
-          <Route path=':universeShort'>
-            <Route path='items'>
-              <Route path=':itemShort' element={<ItemEdit universeLink={universeLink} providerAddress={providerAddress} />} />
+    <Suspense fallback={null}>
+      <Routes>
+        <Route path='editor'>
+          <Route path='universes'>
+            <Route path=':universeShort'>
+              <Route path='items'>
+                <Route path=':itemShort' element={<ItemEdit universeLink={universeLink} providerAddress={providerAddress} />} />
+              </Route>
+            </Route>
+          </Route>
+          <Route path='stories'>
+            <Route path=':storyShort'>
+              <Route path=':chapterIndex' element={<ChapterEdit universeLink={universeLink} />} />
             </Route>
           </Route>
         </Route>
-        <Route path='stories'>
-          <Route path=':storyShort'>
-            <Route path=':chapterIndex' element={<ChapterEdit universeLink={universeLink} />} />
-          </Route>
-        </Route>
-      </Route>
-      <Route path='notes'>
+        <Route path='notes'>
           <Route path=':noteUuid' element={<NoteEdit universeLink={universeLink} />} />
-      </Route>
-    </Routes>
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }

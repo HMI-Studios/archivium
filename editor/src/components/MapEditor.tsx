@@ -2,10 +2,9 @@ import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, useDraggable, use
 import { CSS } from '@dnd-kit/utilities';
 import { useEffect, useRef, useState } from 'react';
 import type { Item, Map, MapLocation } from '../../../src/api/models/item';
-import { capitalize, postFormData, T } from '../helpers';
+import { capitalize, HTTP_INSUFFICIENT_STORAGE, postFormData, T } from '../helpers';
 import type { Categories, ItemOptionEntry } from '../pages/ItemEdit';
 import { createPortal } from 'react-dom';
-import { HttpStatusCode } from 'axios';
 import SearchableSelect from './SearchableSelect';
 
 type MapEditorProps = {
@@ -167,7 +166,7 @@ export default function MapEditor({ item, categories, onUpdate, itemMap }: MapEd
                 const response = await postFormData(`/api/universes/${item.universe_short}/items/${item.shortname}/map/upload`, { image });
                 const data = await response.json();
 
-                if (response.status === HttpStatusCode.InsufficientStorage) {
+                if (response.status === HTTP_INSUFFICIENT_STORAGE) {
                   setUploadModalError('There is not enough available storage to upload this image!');
                   setUploading(false);
                   return;

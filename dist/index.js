@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const compression_1 = __importDefault(require("compression"));
 const path_1 = __importDefault(require("path"));
 const api_1 = __importDefault(require("./api"));
 const templates_1 = require("./templates");
@@ -53,6 +54,7 @@ const config_1 = require("./config");
 require("./hocuspocus");
 logger_1.default.info('Server starting...');
 const app = (0, express_1.default)();
+app.use((0, compression_1.default)());
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use(express_1.default.json());
 app.use(cookieParser_1.default);

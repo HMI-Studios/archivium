@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-    
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default {
@@ -10,8 +10,14 @@ export default {
   output: {
     path: path.resolve(__dirname, '../dist/static/editor'),
     filename: 'bundle.js',
+    chunkFilename: '[name].[contenthash].chunk.js',
     clean: true, // Clean old builds
-    publicPath: '/', // Adjust if using nested routes
+    publicPath: '/static/editor/', // must match where express serves this dir (see templates/editor.pug's bundle.js src)
+  },
+  optimization: {
+    splitChunks: {
+      chunks: 'async',
+    },
   },
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx'],

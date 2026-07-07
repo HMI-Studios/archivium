@@ -56,6 +56,7 @@
     "@tiptap/y-tiptap": "^3.0.1",
     "axios": "^1.13.2",
     "buffer-image-size": "^0.6.4",
+    "compression": "^1.8.1",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
     "fuzzysort": "^3.1.0",
@@ -86,6 +87,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
+    "@types/compression": "^1.8.1",
     "@types/express": "^5.0.6",
     "@types/jsdom": "^21.1.7",
     "@types/lodash": "^4.17.18",
