@@ -9,7 +9,7 @@ import logger from '../logger';
 import { Note } from './models/note';
 import { Session } from './models/session';
 import { User } from './models/user';
-import { handleAsNull, perms } from './utils';
+import { handleAsNull, perms, sendCachedImage } from './utils';
 
 type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type APIRouteHandler = (req: Request<{ [key: string]: string }>, res: Response) => Promise<any>;
@@ -44,6 +44,7 @@ export default function (app: Express, upload: Multer) {
         if (method in this.methodFuncs) {
           try {
             const data = await this.methodFuncs[method](req, res);
+            if (res.headersSent) return next(); // handler already fully responded (e.g. a 304 for a conditional GET)
             res.status(200);
             if (data !== undefined) {
               if (data instanceof Buffer) res.send(data);
@@ -137,10 +138,7 @@ export default function (app: Express, upload: Multer) {
         }),
         new APIRoute('/pfp', {
           GET: (req, res) => api.user.image.getByUsername(req.params.username).then((image) => {
-            if (!image) return;
-            res.contentType(image.mimetype);
-            if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-            return image?.data;
+            return sendCachedImage(req, res, image, image?.id ?? 0, false);
           }),
           DELETE: (req) => api.user.image.del(req.session.user, req.params.username),
         }, [
@@ -176,10 +174,7 @@ export default function (app: Express, upload: Multer) {
       }, [
         new APIRoute('/cover', {
           GET: (req, res) => api.story.cover.getByShortname(req.session.user, req.params.shortname).then((image) => {
-            if (!image) return;
-            res.contentType(image.mimetype);
-            if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-            return image?.data;
+            return sendCachedImage(req, res, image, image?.id ?? 0, false);
           }),
           DELETE: (req) => api.story.cover.del(req.session.user, req.params.shortname),
         }, [
@@ -285,10 +280,7 @@ export default function (app: Express, upload: Multer) {
                 new APIRoute('/:id', {
                   GET: (req, res) => api.item.image.getOneByItemShort(req.session.user, req.params.universeShortName, req.params.itemShortName, { id: req.params.id })
                     .then((image) => {
-                      if (!image) return;
-                      res.contentType(image.mimetype);
-                      if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                      return image.data;
+                      return sendCachedImage(req, res, image, req.params.id, true);
                     }),
                   PUT: (req) => api.item.image.putLabel(req.session.user, Number(req.params.id), req.body.label),
                 }),
@@ -302,10 +294,7 @@ export default function (app: Express, upload: Multer) {
               new APIRoute('/image', {
                 GET: (req, res) => api.item.mapImage.getOneByItemShort(req.session.user, req.params.universeShortName, req.params.itemShortName)
                   .then((image) => {
-                    if (!image) return;
-                    res.contentType(image.mimetype);
-                    if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                    return image.data;
+                    return sendCachedImage(req, res, image, image?.id ?? 0, false);
                   }),
               }),
             ]),
@@ -376,10 +365,7 @@ export default function (app: Express, upload: Multer) {
       new APIRoute('/:id', {
         GET: (req, res) => api.image.get(req.session.user, Number(req.params.id))
           .then((image) => {
-            if (!image) return;
-            res.contentType(image.mimetype);
-            if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-            return image.data;
+            return sendCachedImage(req, res, image, req.params.id, true);
           }),
       }),
     ]),

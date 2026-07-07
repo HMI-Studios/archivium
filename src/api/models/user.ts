@@ -12,6 +12,7 @@ export type UserSponsoredUniverses = { tier: number, universes: string[], univer
 
 export type UserImage = {
   user_id: number,
+  id: number,
   name: string,
   mimetype: string,
   data: Buffer,
@@ -78,8 +79,8 @@ export class UserImageAPI {
     const user = await this.user.getOne({ 'user.username': username });
     if (!user) throw new NotFoundError();
     let queryString = `
-      SELECT 
-        ui.user_id, image.name, image.mimetype, image.data
+      SELECT
+        ui.user_id, image.id, image.name, image.mimetype, image.data
       FROM userimage AS ui
       INNER JOIN image ON image.id = ui.image_id
       WHERE ui.user_id = ?;

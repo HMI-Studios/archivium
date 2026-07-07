@@ -3,6 +3,7 @@ import sizeOf from 'buffer-image-size';
 import api, { API } from '..';
 import { ForbiddenError, InsufficientStorageError, ModelError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
 import { extractLinkData, LinkData } from '../../lib/editor';
+import { generatePreview, previewToDataUri } from '../../lib/imagePreview';
 import { IndexedDocument, indexedToJson, updateLinks } from '../../lib/tiptapHelpers';
 import { BaseOptions, Cond, executeQuery, handleAsNull, parseData, perms, QueryBuilder, tierLimits, withTransaction } from '../utils';
 import { User } from './user';
@@ -26,6 +27,7 @@ export type Image = {
   name: string,
   mimetype: string,
   data?: Buffer,
+  preview?: Buffer | null,
 };
 
 export type MapImage = Image & {
@@ -50,6 +52,7 @@ export type GalleryImage = {
   id: number,
   name: string,
   label: string,
+  preview?: string | null,
 };
 
 // TODO this typing is ugly...
@@ -58,6 +61,7 @@ export type Map = {
   width: number | null,
   height: number | null,
   image_id: number | null,
+  preview?: string | null,
   locations: MapLocation[],
 };
 
@@ -224,6 +228,7 @@ class MapImageAPI {
 
     const { originalname, buffer, mimetype } = file;
     const { width, height } = sizeOf(buffer);
+    const preview = await generatePreview(buffer);
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
     const existingImage = await this.getOneByItem(item).catch(handleAsNull(NotFoundError));
 
@@ -238,8 +243,8 @@ class MapImageAPI {
       }
 
       [data] = await conn.execute<ResultSetHeader>(
-        'INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)',
-        [originalname.substring(0, 64), mimetype, buffer],
+        'INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)',
+        [originalname.substring(0, 64), mimetype, buffer, preview],
       );
 
       await conn.execute('UPDATE map SET image_id = ?, width = ?, height = ? WHERE id = ?', [data.insertId, width, height, map.id]);
@@ -309,13 +314,14 @@ class ItemImageAPI {
     }
 
     const { originalname, buffer, mimetype } = file;
+    const preview = await generatePreview(buffer);
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
 
     let data!: ResultSetHeader;
     await withTransaction(async (conn) => {
       [data] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`,
-        [originalname.substring(0, 64), mimetype, buffer],
+        `INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)`,
+        [originalname.substring(0, 64), mimetype, buffer, preview],
       );
 
       await conn.execute<ResultSetHeader>(
@@ -403,7 +409,7 @@ export class ItemAPI {
 
     const map = (await executeQuery(`
       SELECT
-        map.id, map.width, map.height, map.image_id,
+        map.id, map.width, map.height, map.image_id, mapimage.preview,
         JSON_ARRAYAGG(JSON_OBJECT(
           'id', loc.id,
           'title', loc.title,
@@ -414,6 +420,7 @@ export class ItemAPI {
           'y', loc.y
         )) as locations
       FROM map
+      LEFT JOIN image AS mapimage ON mapimage.id = map.image_id
       LEFT JOIN maplocation AS loc ON loc.map_id = map.id
       LEFT JOIN item ON item.id = loc.item_id
       LEFT JOIN universe ON universe.id = item.universe_id
@@ -423,17 +430,18 @@ export class ItemAPI {
     if (map?.locations.length === 1 && map.locations[0].id === null) {
       map.locations = [];
     }
+    if (map) map.preview = previewToDataUri(map.preview);
     item.map = map as Map | null;
 
     const gallery = await executeQuery(`
       SELECT
-        image.id, image.name, itemimage.label
+        image.id, image.name, itemimage.label, image.preview
       FROM itemimage
       INNER JOIN image ON image.id = itemimage.image_id
       WHERE itemimage.item_id = ?
       ORDER BY itemimage.idx
-    `, [item.id]) as GalleryImage[];
-    item.gallery = gallery;
+    `, [item.id]) as (Omit<GalleryImage, 'preview'> & { preview: Buffer | null })[];
+    item.gallery = gallery.map((img) => ({ ...img, preview: previewToDataUri(img.preview) }));
 
     [item.parents, item.children] = await this.getLineage(item);
 

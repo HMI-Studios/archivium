@@ -8,6 +8,7 @@ import sharp from 'sharp';
 
 export type StoryCover = {
   user_id: number,
+  id: number,
   name: string,
   mimetype: string,
   data: Buffer,
@@ -55,8 +56,8 @@ export class StoryCoverAPI {
     const story = await this.story.getOne(user, { 'story.shortname': shortname });
     if (!story) throw new NotFoundError();
     let queryString = `
-      SELECT 
-        si.story_id, image.name, image.mimetype, image.data
+      SELECT
+        si.story_id, image.id, image.name, image.mimetype, image.data
       FROM storyimage AS si
       INNER JOIN image ON image.id = si.image_id
       WHERE si.story_id = ?;
@@ -70,7 +71,7 @@ export class StoryCoverAPI {
 
     const { originalname, buffer, mimetype } = file;
     const story = await this.story.getOne(user, { 'story.shortname': shortname }, perms.WRITE);
-    
+
     const resizedBuffer = await sharp(buffer)
       .resize({
         width: 512,

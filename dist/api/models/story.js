@@ -17,8 +17,8 @@ class StoryCoverAPI {
         if (!story)
             throw new errors_1.NotFoundError();
         let queryString = `
-      SELECT 
-        si.story_id, image.name, image.mimetype, image.data
+      SELECT
+        si.story_id, image.id, image.name, image.mimetype, image.data
       FROM storyimage AS si
       INNER JOIN image ON image.id = si.image_id
       WHERE si.story_id = ?;

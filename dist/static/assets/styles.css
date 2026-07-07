@@ -1934,3 +1934,11 @@ aside .iframe-wrapper>iframe {
 .overflow-hidden {
     overflow: hidden;
 }
+
+.progressive-image {
+  filter: blur(1rem);
+  transition: filter 0.25s ease-out;
+}
+.progressive-image.loaded {
+  filter: none;
+}

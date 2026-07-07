@@ -34,6 +34,8 @@ function default_1(app, upload) {
                 if (method in this.methodFuncs) {
                     try {
                         const data = await this.methodFuncs[method](req, res);
+                        if (res.headersSent)
+                            return next(); // handler already fully responded (e.g. a 304 for a conditional GET)
                         res.status(200);
                         if (data !== undefined) {
                             if (data instanceof Buffer)
@@ -135,12 +137,7 @@ function default_1(app, upload) {
                 }),
                 new APIRoute('/pfp', {
                     GET: (req, res) => _1.default.user.image.getByUsername(req.params.username).then((image) => {
-                        if (!image)
-                            return;
-                        res.contentType(image.mimetype);
-                        if (req.query.download === '1')
-                            res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                        return image?.data;
+                        return (0, utils_1.sendCachedImage)(req, res, image, image?.id ?? 0, false);
                     }),
                     DELETE: (req) => _1.default.user.image.del(req.session.user, req.params.username),
                 }, [
@@ -176,12 +173,7 @@ function default_1(app, upload) {
             }, [
                 new APIRoute('/cover', {
                     GET: (req, res) => _1.default.story.cover.getByShortname(req.session.user, req.params.shortname).then((image) => {
-                        if (!image)
-                            return;
-                        res.contentType(image.mimetype);
-                        if (req.query.download === '1')
-                            res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                        return image?.data;
+                        return (0, utils_1.sendCachedImage)(req, res, image, image?.id ?? 0, false);
                     }),
                     DELETE: (req) => _1.default.story.cover.del(req.session.user, req.params.shortname),
                 }, [
@@ -276,12 +268,7 @@ function default_1(app, upload) {
                                 new APIRoute('/:id', {
                                     GET: (req, res) => _1.default.item.image.getOneByItemShort(req.session.user, req.params.universeShortName, req.params.itemShortName, { id: req.params.id })
                                         .then((image) => {
-                                        if (!image)
-                                            return;
-                                        res.contentType(image.mimetype);
-                                        if (req.query.download === '1')
-                                            res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                                        return image.data;
+                                        return (0, utils_1.sendCachedImage)(req, res, image, req.params.id, true);
                                     }),
                                     PUT: (req) => _1.default.item.image.putLabel(req.session.user, Number(req.params.id), req.body.label),
                                 }),
@@ -295,12 +282,7 @@ function default_1(app, upload) {
                             new APIRoute('/image', {
                                 GET: (req, res) => _1.default.item.mapImage.getOneByItemShort(req.session.user, req.params.universeShortName, req.params.itemShortName)
                                     .then((image) => {
-                                    if (!image)
-                                        return;
-                                    res.contentType(image.mimetype);
-                                    if (req.query.download === '1')
-                                        res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                                    return image.data;
+                                    return (0, utils_1.sendCachedImage)(req, res, image, image?.id ?? 0, false);
                                 }),
                             }),
                         ]),
@@ -371,12 +353,7 @@ function default_1(app, upload) {
             new APIRoute('/:id', {
                 GET: (req, res) => _1.default.image.get(req.session.user, Number(req.params.id))
                     .then((image) => {
-                    if (!image)
-                        return;
-                    res.contentType(image.mimetype);
-                    if (req.query.download === '1')
-                        res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
-                    return image.data;
+                    return (0, utils_1.sendCachedImage)(req, res, image, req.params.id, true);
                 }),
             }),
         ]),

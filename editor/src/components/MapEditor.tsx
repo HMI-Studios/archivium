@@ -5,6 +5,7 @@ import type { Item, Map, MapLocation } from '../../../src/api/models/item';
 import { capitalize, HTTP_INSUFFICIENT_STORAGE, postFormData, T } from '../helpers';
 import type { Categories, ItemOptionEntry } from '../pages/ItemEdit';
 import { createPortal } from 'react-dom';
+import ProgressiveImage from './ProgressiveImage';
 import SearchableSelect from './SearchableSelect';
 
 type MapEditorProps = {
@@ -91,7 +92,11 @@ export default function MapEditor({ item, categories, onUpdate, itemMap }: MapEd
         }}
       >
         {item.map?.image_id && (
-          <img className='w-100' src={`/api/universes/${item.universe_short}/items/${item.shortname}/map/image#${item.map.image_id}`} />
+          <ProgressiveImage
+            className='w-100'
+            src={`/api/universes/${item.universe_short}/items/${item.shortname}/map/image#${item.map.image_id}`}
+            preview={item.map.preview}
+          />
         )}
         <DndContext
           sensors={sensors}

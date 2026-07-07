@@ -19,6 +19,7 @@ import TabsBar from '../components/TabsBar';
 import { BulkExistsFetcher, capitalize, fetchData, T } from '../helpers';
 import { useProvider } from '../hooks/useProvider';
 import { useYState } from '../hooks/useYState';
+import ImageWithPreview from '../lib/ImageWithPreview';
 
 const Gallery = lazy(() => import(/* webpackChunkName: "tab-gallery" */ '../components/Gallery'));
 const LineageEditor = lazy(() => import(/* webpackChunkName: "tab-lineage" */ '../components/LineageEditor'));
@@ -113,6 +114,15 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
+  const galleryPreviewsRef = useRef<Record<number, string>>({});
+  useEffect(() => {
+    const previews: Record<number, string> = {};
+    for (const img of item?.gallery ?? []) {
+      if (img.preview) previews[img.id] = img.preview;
+    }
+    galleryPreviewsRef.current = previews;
+  }, [item?.gallery]);
+
   const [provider, error, docUsers, docSelectors, setAwareness] = useProvider(providerAddress, `item/${universeShort}/${itemShort}`, ydoc);
 
   useEffect(() => {
@@ -120,7 +130,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       const handleSync = async () => {
         syncItemExistsCache();
         const editor = new Editor({
-          extensions: editorExtensions(true, context, { ydoc, field: 'main', provider }),
+          extensions: editorExtensions(true, context, { ydoc, field: 'main', provider }, ImageWithPreview.configure({
+            getPreview: (id: number) => galleryPreviewsRef.current[id],
+          })),
           onUpdate: ({ editor }) => {
             const json = editor.getJSON();
             const indexed = jsonToIndexed(json);
