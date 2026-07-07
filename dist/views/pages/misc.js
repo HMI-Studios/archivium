@@ -3,11 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const api_1 = __importDefault(require("../../api"));
-const utils_1 = require("../../api/utils");
 const promises_1 = __importDefault(require("fs/promises"));
 const path_1 = __importDefault(require("path"));
+const api_1 = __importDefault(require("../../api"));
+const utils_1 = require("../../api/utils");
+const embedding_1 = __importDefault(require("../../embedding"));
 const errors_1 = require("../../errors");
+const logger_1 = __importDefault(require("../../logger"));
 const staticDir = path_1.default.join(__dirname, '../../static');
 exports.default = {
     /* Terms and Agreements */
@@ -75,7 +77,22 @@ exports.default = {
             const universes = await api_1.default.universe.getMany(req.session.user, { strings: ['title LIKE ?'], values: [`%${search}%`] });
             const items = await api_1.default.item.getMany(req.session.user, null, utils_1.perms.READ, { search });
             const notes = req.session.user ? await api_1.default.note.getByUsername(req.session.user, req.session.user.username, null, { search }) : [];
-            res.prepareRender('search', { items, universes, notes, search });
+            let semanticItems = [];
+            try {
+                const alreadyMatched = new Set(items.map(item => item.id));
+                const results = await embedding_1.default.search(req.session.user, { query: search });
+                semanticItems = results
+                    .filter(({ item }) => !alreadyMatched.has(item.id))
+                    .map(({ item, chunks }) => ({
+                    ...item,
+                    snippet: chunks.sort((a, b) => a.score > b.score ? -1 : 1)[0]?.content.substring(0, 100),
+                    semantic: true,
+                }));
+            }
+            catch (err) {
+                logger_1.default.error(`Semantic search failed during page search: ${err}`);
+            }
+            res.prepareRender('search', { items: [...items, ...semanticItems], universes, notes, search });
         }
         else {
             res.prepareRender('search', { items: [], universes: [], notes: [], search: '' });

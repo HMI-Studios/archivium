@@ -1,10 +1,12 @@
-import api from '../../api';
-import { Cond, perms } from '../../api/utils';
 import fs from 'fs/promises';
-import { ADDR_PREFIX } from '../../config';
-import { RouteHandler } from '..';
 import path from 'path';
+import { RouteHandler } from '..';
+import api from '../../api';
+import { BasicItem } from '../../api/models/item';
+import { Cond, perms } from '../../api/utils';
+import embedder from '../../embedding';
 import { UnauthorizedError } from '../../errors';
+import logger from '../../logger';
 
 const staticDir = path.join(__dirname, '../../static');
 
@@ -74,9 +76,25 @@ export default {
     const search = req.getQueryParam('search');
     if (search) {
       const universes = await api.universe.getMany(req.session.user, { strings: ['title LIKE ?'], values: [`%${search}%`] });
-      const items = await api.item.getMany(req.session.user, null, perms.READ, { search });
+      const items: (BasicItem & { snippet?: string, semantic?: boolean })[] = await api.item.getMany(req.session.user, null, perms.READ, { search });
       const notes = req.session.user ? await api.note.getByUsername(req.session.user, req.session.user.username, null, { search }) : [];
-      res.prepareRender('search', { items, universes, notes, search });
+
+      let semanticItems: (BasicItem & { snippet?: string, semantic?: boolean })[] = [];
+      try {
+        const alreadyMatched = new Set(items.map(item => item.id));
+        const results = await embedder.search(req.session.user, { query: search });
+        semanticItems = results
+          .filter(({ item }) => !alreadyMatched.has(item.id))
+          .map(({ item, chunks }) => ({
+            ...item,
+            snippet: chunks.sort((a, b) => a.score > b.score ? -1 : 1)[0]?.content.substring(0, 100),
+            semantic: true,
+          }));
+      } catch (err) {
+        logger.error(`Semantic search failed during page search: ${err}`);
+      }
+
+      res.prepareRender('search', { items: [...items, ...semanticItems], universes, notes, search });
     } else {
       res.prepareRender('search', { items: [], universes: [], notes: [], search: '' });
     }
