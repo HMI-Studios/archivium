@@ -16,6 +16,7 @@ const EMBED_TIMEOUT_MS = 20_000;
 const EMBED_RETRY_DELAY_MS = 1_000;
 const MIN_RELEVANCE_SCORE = 0.6;
 const MAX_CHUNK_CHARS = 8_000;
+const VECTOR_DIMENSIONS = 768;
 const qdrantClient = new js_client_rest_1.QdrantClient({ host: 'localhost', port: 6333 });
 async function requestEmbedding(input) {
     let lastErr;
@@ -63,7 +64,7 @@ async function ensureCollection() {
     if (!exists) {
         await qdrantClient.createCollection(COLLECTION_NAME, {
             vectors: {
-                size: 768,
+                size: VECTOR_DIMENSIONS,
                 distance: 'Cosine',
             }
         });
@@ -130,6 +131,20 @@ class Embedder {
                 must: [{ key: 'universeId', match: { value: universeId } }],
             },
         });
+    }
+    async getStatsForUniverse(universeId) {
+        const [row] = await (0, utils_1.executeQuery)(`
+      SELECT COUNT(*) AS chunkCount, COUNT(DISTINCT item_id) AS itemCount
+      FROM itemembeddedchunks
+      INNER JOIN item ON item.id = itemembeddedchunks.item_id
+      WHERE item.universe_id = ?
+    `, [universeId]);
+        const chunkCount = Number(row?.chunkCount ?? 0);
+        return {
+            chunkCount,
+            itemCount: Number(row?.itemCount ?? 0),
+            estimatedBytes: chunkCount * VECTOR_DIMENSIONS * 4,
+        };
     }
     async nextJob() {
         const job = this.queue.shift();

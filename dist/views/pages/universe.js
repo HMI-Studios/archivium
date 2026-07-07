@@ -3,12 +3,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const config_1 = require("../../config");
 const api_1 = __importDefault(require("../../api"));
-const templates_1 = require("../../templates");
 const utils_1 = require("../../api/utils");
+const config_1 = require("../../config");
+const embedding_1 = __importDefault(require("../../embedding"));
 const errors_1 = require("../../errors");
 const renderContent_1 = require("../../lib/renderContent");
+const templates_1 = require("../../templates");
 exports.default = {
     async list(req, res) {
         const search = req.query.search;
@@ -141,7 +142,8 @@ exports.default = {
                 ownerCount++;
         }
         const totalStoredImages = await api_1.default.universe.getTotalStoredByShortname(universe.shortname);
-        res.prepareRender('universeAdmin', { universe, requests, invites, ownerCount, totalStoredImages, tierLimits: utils_1.tierLimits[universe.tier ?? 0] });
+        const embeddingStats = await embedding_1.default.getStatsForUniverse(universe.id);
+        res.prepareRender('universeAdmin', { universe, requests, invites, ownerCount, totalStoredImages, embeddingStats, tierLimits: utils_1.tierLimits[universe.tier ?? 0] });
     },
     async stats(req, res) {
         const universe = await api_1.default.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, utils_1.perms.WRITE);
