@@ -10,7 +10,7 @@ export interface MentionItem {
 }
 
 export interface MentionOptions {
-  items: () => Record<string, { title: string }>;
+  items: () => Record<string, { title: string, tags?: string[] }>;
   limit: number;
 }
 
@@ -121,14 +121,16 @@ const Mention = Extension.create<MentionOptions>({
 
         items: ({ query }) => {
           const source = this.options.items() ?? {};
-          const entries = Object.entries(source).map(([shortname, { title }]) => ({ shortname, title }));
+          const entries = Object.entries(source).map(([shortname, { title, tags }]) => ({ shortname, title, tags: tags ?? [] }));
           const q = query.trim();
 
           if (!q) {
             return entries.sort((a, b) => a.title.localeCompare(b.title)).slice(0, this.options.limit);
           }
 
-          return fuzzysort.go(q, entries, { key: 'title', limit: this.options.limit }).map((result) => result.obj);
+          return fuzzysort
+            .go(q, entries, { keys: ['title', (entry) => entry.tags.join(' ')], limit: this.options.limit })
+            .map((result) => result.obj);
         },
 
         command: ({ editor, range, props }) => {

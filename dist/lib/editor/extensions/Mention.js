@@ -101,12 +101,14 @@ const Mention = core_1.Extension.create({
                 pluginKey: MentionPluginKey,
                 items: ({ query }) => {
                     const source = this.options.items() ?? {};
-                    const entries = Object.entries(source).map(([shortname, { title }]) => ({ shortname, title }));
+                    const entries = Object.entries(source).map(([shortname, { title, tags }]) => ({ shortname, title, tags: tags ?? [] }));
                     const q = query.trim();
                     if (!q) {
                         return entries.sort((a, b) => a.title.localeCompare(b.title)).slice(0, this.options.limit);
                     }
-                    return fuzzysort_1.default.go(q, entries, { key: 'title', limit: this.options.limit }).map((result) => result.obj);
+                    return fuzzysort_1.default
+                        .go(q, entries, { keys: ['title', (entry) => entry.tags.join(' ')], limit: this.options.limit })
+                        .map((result) => result.obj);
                 },
                 command: ({ editor, range, props }) => {
                     const typed = editor.state.doc.textBetween(range.from + 1, range.to).trim();

@@ -19,7 +19,7 @@ export interface TiptapContext {
   universeLink: (universe: string) => string;
   itemExists: (universe: string, item: string) => boolean;
   headings: { title: string, level: number }[],
-  items?: () => Record<string, { title: string }>;
+  items?: () => Record<string, { title: string, tags?: string[] }>;
 }
 
 export type LinkData = {
