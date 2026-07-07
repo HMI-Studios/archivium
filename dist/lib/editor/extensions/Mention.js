@@ -7,6 +7,7 @@ const core_1 = require("@tiptap/core");
 const suggestion_1 = require("@tiptap/suggestion");
 const state_1 = require("@tiptap/pm/state");
 const tippy_js_1 = __importDefault(require("tippy.js"));
+const fuzzysort_1 = __importDefault(require("fuzzysort"));
 const MentionPluginKey = new state_1.PluginKey('itemMentionSuggestion');
 function renderSuggestionList() {
     let container;
@@ -100,23 +101,21 @@ const Mention = core_1.Extension.create({
                 pluginKey: MentionPluginKey,
                 items: ({ query }) => {
                     const source = this.options.items() ?? {};
-                    const q = query.trim().toLowerCase();
-                    return Object.entries(source)
-                        .filter(([, { title }]) => !q || title.toLowerCase().includes(q))
-                        .map(([shortname, { title }]) => ({ shortname, title }))
-                        .sort((a, b) => {
-                        const aStarts = a.title.toLowerCase().startsWith(q) ? 0 : 1;
-                        const bStarts = b.title.toLowerCase().startsWith(q) ? 0 : 1;
-                        return aStarts !== bStarts ? aStarts - bStarts : a.title.localeCompare(b.title);
-                    })
-                        .slice(0, this.options.limit);
+                    const entries = Object.entries(source).map(([shortname, { title }]) => ({ shortname, title }));
+                    const q = query.trim();
+                    if (!q) {
+                        return entries.sort((a, b) => a.title.localeCompare(b.title)).slice(0, this.options.limit);
+                    }
+                    return fuzzysort_1.default.go(q, entries, { key: 'title', limit: this.options.limit }).map((result) => result.obj);
                 },
                 command: ({ editor, range, props }) => {
+                    const typed = editor.state.doc.textBetween(range.from + 1, range.to).trim();
+                    const label = typed || props.title;
                     editor
                         .chain()
                         .focus()
                         .insertContentAt(range, [
-                        { type: 'text', marks: [{ type: 'link', attrs: { href: `@${props.shortname}` } }], text: props.title },
+                        { type: 'text', marks: [{ type: 'link', attrs: { href: `@${props.shortname}`, title: props.title } }], text: label },
                         { type: 'text', text: ' ' },
                     ])
                         .run();

@@ -36,7 +36,10 @@ const Link = TiptapLink.configure({
     return {
       href: {
         parseHTML: element => element.getAttribute('data-href'),
-      }
+      },
+      title: {
+        default: null,
+      },
     }
   },
 

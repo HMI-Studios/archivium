@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import { Suggestion, SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
 import { PluginKey } from '@tiptap/pm/state';
 import tippy, { Instance as TippyInstance, Props as TippyProps } from 'tippy.js';
+import fuzzysort from 'fuzzysort';
 
 export interface MentionItem {
   shortname: string;
@@ -120,25 +121,25 @@ const Mention = Extension.create<MentionOptions>({
 
         items: ({ query }) => {
           const source = this.options.items() ?? {};
-          const q = query.trim().toLowerCase();
+          const entries = Object.entries(source).map(([shortname, { title }]) => ({ shortname, title }));
+          const q = query.trim();
 
-          return Object.entries(source)
-            .filter(([, { title }]) => !q || title.toLowerCase().includes(q))
-            .map(([shortname, { title }]) => ({ shortname, title }))
-            .sort((a, b) => {
-              const aStarts = a.title.toLowerCase().startsWith(q) ? 0 : 1;
-              const bStarts = b.title.toLowerCase().startsWith(q) ? 0 : 1;
-              return aStarts !== bStarts ? aStarts - bStarts : a.title.localeCompare(b.title);
-            })
-            .slice(0, this.options.limit);
+          if (!q) {
+            return entries.sort((a, b) => a.title.localeCompare(b.title)).slice(0, this.options.limit);
+          }
+
+          return fuzzysort.go(q, entries, { key: 'title', limit: this.options.limit }).map((result) => result.obj);
         },
 
         command: ({ editor, range, props }) => {
+          const typed = editor.state.doc.textBetween(range.from + 1, range.to).trim();
+          const label = typed || props.title;
+
           editor
             .chain()
             .focus()
             .insertContentAt(range, [
-              { type: 'text', marks: [{ type: 'link', attrs: { href: `@${props.shortname}` } }], text: props.title },
+              { type: 'text', marks: [{ type: 'link', attrs: { href: `@${props.shortname}`, title: props.title } }], text: label },
               { type: 'text', text: ' ' },
             ])
             .run();
