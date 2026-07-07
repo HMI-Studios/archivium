@@ -21,7 +21,9 @@
     "editor:watch": "cd editor && cross-env NODE_ENV=production webpack watch",
     "editor:build": "cd editor && cross-env NODE_ENV=production webpack",
     "editor:lint": "eslint editor/",
-    "build:all": "npm run build && npm run editor:build"
+    "build:all": "npm run build && npm run editor:build",
+    "qdrant:up": "docker compose up -d qdrant",
+    "qdrant:down": "docker compose down"
   },
   "repository": {
     "type": "git",

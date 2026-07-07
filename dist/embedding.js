@@ -17,7 +17,9 @@ const EMBED_RETRY_DELAY_MS = 1_000;
 const MIN_RELEVANCE_SCORE = 0.6;
 const MAX_CHUNK_CHARS = 8_000;
 const VECTOR_DIMENSIONS = 768;
-const qdrantClient = new js_client_rest_1.QdrantClient({ host: 'localhost', port: 6333 });
+// Embedding may not always be available - we need to handle the case when it's not.
+const EMBEDDING_ENABLED = Boolean(config_1.EMBEDDING_API_URL);
+const qdrantClient = new js_client_rest_1.QdrantClient({ url: config_1.QDRANT_URL });
 async function requestEmbedding(input) {
     let lastErr;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -70,7 +72,12 @@ async function ensureCollection() {
         });
     }
 }
-ensureCollection();
+if (EMBEDDING_ENABLED) {
+    ensureCollection().catch(err => logger_1.default.error(`Embedder: failed to initialize Qdrant collection: ${err}`));
+}
+else {
+    logger_1.default.warn('Embedder: EMBEDDING_API_URL not configured, semantic search disabled.');
+}
 function waitFor(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -102,12 +109,16 @@ class Embedder {
         clearInterval(this.loggerInterval);
     }
     addJob(job) {
+        if (!EMBEDDING_ENABLED)
+            return;
         this.queue.push(job);
         if (!this.isRunning) {
             this.start();
         }
     }
     async enableEmbed(universe) {
+        if (!EMBEDDING_ENABLED)
+            return;
         const items = await (0, utils_1.executeQuery)('SELECT id FROM item WHERE universe_id = ?', [universe.id]);
         logger_1.default.info(`Enabling semantic search for ${universe.title} with ${items.length} items to check...`);
         for (const { id } of items) {
@@ -117,6 +128,8 @@ class Embedder {
     }
     // Must be called before items/universes are deleted to ensure embeddings are cleaned up!
     async deleteForItem(itemId) {
+        if (!EMBEDDING_ENABLED)
+            return;
         await qdrantClient.delete(COLLECTION_NAME, {
             wait: true,
             filter: {
@@ -125,6 +138,8 @@ class Embedder {
         });
     }
     async deleteForUniverse(universeId) {
+        if (!EMBEDDING_ENABLED)
+            return;
         await qdrantClient.delete(COLLECTION_NAME, {
             wait: true,
             filter: {
@@ -146,9 +161,9 @@ class Embedder {
             estimatedBytes: chunkCount * VECTOR_DIMENSIONS * 4,
         };
     }
-    // Must never throw: this backs a page-render path that should degrade silently
-    // (empty list) rather than break the item page if the embedding subsystem is down.
     async getRelatedItems(user, itemId, universeId, limit = 6) {
+        if (!EMBEDDING_ENABLED)
+            return [];
         try {
             const [ownChunk] = await (0, utils_1.executeQuery)(`SELECT id FROM itemembeddedchunks WHERE item_id = ? AND scope = 'item' LIMIT 1`, [itemId]);
             if (!ownChunk)
@@ -324,6 +339,8 @@ class Embedder {
         });
     }
     async reembedItem(id) {
+        if (!EMBEDDING_ENABLED)
+            return;
         const { affectedRows } = await (0, utils_1.executeQuery)('DELETE FROM itemembeddedchunks WHERE item_id = ?', [id]);
         if (affectedRows > 0) {
             await qdrantClient.delete(COLLECTION_NAME, {
@@ -387,6 +404,8 @@ class Embedder {
             .sort((a, b) => a.score > b.score ? -1 : 1));
     }
     async search(user, options) {
+        if (!EMBEDDING_ENABLED)
+            return [];
         const data = await new Promise((resolve, reject) => {
             this.addJob({
                 type: 'search',
