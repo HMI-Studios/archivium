@@ -5,14 +5,59 @@ import { executeQuery } from './api/utils';
 import { createHash } from './lib/hashUtils';
 import { getTextContent, IndexedDocument, indexedToJson } from './lib/tiptapHelpers';
 import logger from './logger';
-import { LMSTER_KEY } from './config';
+import { EMBEDDING_API_URL, LMSTER_KEY } from './config';
 import { ResultSetHeader } from 'mysql2';
 import { User } from './api/models/user';
 import api from './api';
 
 const COLLECTION_NAME = 'archivium-embeds';
+const EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5';
+const EMBED_TIMEOUT_MS = 20_000;
+const EMBED_RETRY_DELAY_MS = 1_000;
+const MIN_RELEVANCE_SCORE = 0.6;
+const MAX_CHUNK_CHARS = 8_000;
 
 const qdrantClient = new QdrantClient({ host: 'localhost', port: 6333 });
+
+async function requestEmbedding(input: string): Promise<number[]> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await waitFor(EMBED_RETRY_DELAY_MS);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
+    try {
+      const response = await fetch(EMBEDDING_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${LMSTER_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          input,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Embedding request failed: ${response.status} ${response.statusText}`);
+      }
+
+      const { data } = await response.json();
+      const vector = data?.[0]?.embedding;
+      if (!Array.isArray(vector)) {
+        throw new Error('Embedding response missing data[0].embedding');
+      }
+
+      return vector;
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastErr;
+}
 
 async function ensureCollection() {
   logger.info('Starting Qdrant...');
@@ -51,7 +96,7 @@ export type FetchedChunk = {
   scope: string,
   heading_path: string,
   content: string,
-  token_count: 63,
+  token_count: number,
   hash: string,
   score: number,
 };
@@ -116,6 +161,25 @@ class Embedder {
     this.start();
   }
 
+  // Must be called before items/universes are deleted to ensure embeddings are cleaned up!
+  public async deleteForItem(itemId: number): Promise<void> {
+    await qdrantClient.delete(COLLECTION_NAME, {
+      wait: true,
+      filter: {
+        must: [{ key: 'itemId', match: { value: itemId } }],
+      },
+    });
+  }
+
+  public async deleteForUniverse(universeId: number): Promise<void> {
+    await qdrantClient.delete(COLLECTION_NAME, {
+      wait: true,
+      filter: {
+        must: [{ key: 'universeId', match: { value: universeId } }],
+      },
+    });
+  }
+
   private async nextJob() {
     const job = this.queue.shift();
     if (!job) return;
@@ -143,6 +207,8 @@ class Embedder {
     } catch (err) {
       console.error(err);
       logger.error(`Bad job: ${JSON.stringify(job)}`);
+      const reject = job.data?.reject as ((err: unknown) => void) | undefined;
+      reject?.(err);
     }
   }
 
@@ -201,7 +267,7 @@ class Embedder {
       const body = indexedToJson(indexed);
       const chunks: Chunk[] = [];
 
-      const bodyContent = getTextContent(body.content);
+      const bodyContent = body.content.map(getTextContent).join('\n\n').slice(0, MAX_CHUNK_CHARS);
       chunks.push({
         text: bodyContent,
         path: '',
@@ -209,30 +275,29 @@ class Embedder {
         scope: 'item',
       });
 
+      const pushChunk = (chunk: Chunk) => {
+        const text = chunk.text.trim();
+        if (text.length > MAX_CHUNK_CHARS) {
+          logger.warn(`Embedding chunk exceeded ${MAX_CHUNK_CHARS} chars, truncating (item chunk path: "${chunk.path}")`);
+        }
+        chunks.push({ ...chunk, text: text.slice(0, MAX_CHUNK_CHARS) });
+      };
+
       let currentChunk: Chunk = { text: '', path: '', size: 0, scope: 'section' };
       for (const node of body.content) {
         const content = getTextContent(node);
         const tokenCount = Math.round(content.split(/\s+/).length * 1.3);
         if (node.type === 'heading' && currentChunk.size > MIN_SIZE) {
-          chunks.push({
-            ...currentChunk,
-            text: currentChunk.text.trim(),
-          });
+          pushChunk(currentChunk);
           currentChunk = { text: '', path: content, size: 0, scope: 'section' };
         } else if (currentChunk.size + tokenCount > MAX_SIZE) {
-          chunks.push({
-            ...currentChunk,
-            text: currentChunk.text.trim(),
-          });
+          pushChunk(currentChunk);
           currentChunk = { text: '', path: currentChunk.path, size: 0, scope: 'section' };
         }
         currentChunk.text += `${content}\n\n`;
         currentChunk.size += tokenCount;
       }
-      chunks.push({
-        ...currentChunk,
-        text: currentChunk.text.trim(),
-      });
+      pushChunk(currentChunk);
 
       return chunks;
     } catch (err) {
@@ -250,17 +315,7 @@ class Embedder {
       ${chunk.text}
     `;
 
-    const response = await fetch("http://hmi.dynu.net:1234/v1/embeddings", {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LMSTER_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-nomic-embed-text-v1.5',
-        input: embedText,
-      })
-    });
+    const vector = await requestEmbedding(embedText);
 
     const hash = createHash(chunk.text);
     const { insertId } = await executeQuery<ResultSetHeader>(`
@@ -269,8 +324,6 @@ class Embedder {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [chunkId, itemId, chunk.scope, chunk.path, chunk.text, chunk.size, hash]);
 
-    const { data } = await response.json();
-    const vector = data[0].embedding;
     const payload = { universeId, itemId, itemTitle, itemType, chunkId, path: chunk.path, scope: chunk.scope };
 
     await qdrantClient.upsert(COLLECTION_NAME, {
@@ -299,25 +352,23 @@ class Embedder {
 
   private async doSearch(user: User | undefined, options: SearchOptions, resolve: (results: FetchedChunk[]) => void): Promise<void> {
     const universes = await api.universe.getMany(user);
-
-    const response = await fetch("http://hmi.dynu.net:1234/v1/embeddings", {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LMSTER_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-embedding-nomic-embed-text-v1.5',
-        input: `search_query: ${options.query}`,
+    const searchableUniverseIds = universes
+      .filter(u => {
+        try {
+          return !!u.obj_data?.semanticSearchEnabled;
+        } catch {
+          return false;
+        }
       })
-    });
+      .map(u => u.id);
 
-    const { data } = await response.json();
-    const vector = data[0].embedding;
+    if (searchableUniverseIds.length === 0) return resolve([]);
+
+    const vector = await requestEmbedding(`search_query: ${options.query}`);
     const filters: Record<string, unknown>[] = [
       {
         key: 'universeId',
-        match: { any: universes.map(u => u.id) },
+        match: { any: searchableUniverseIds },
       },
     ];
     if (options.universeId) {
@@ -328,9 +379,11 @@ class Embedder {
         },
       );
     }
+    // Over-fetch chunks since multiple chunks can belong to the same item; search() truncates to options.limit items.
+    const itemLimit = options.limit ?? 20;
     const { points } = await qdrantClient.query(COLLECTION_NAME, {
       query: vector,
-      limit: options.limit ?? 20,
+      limit: itemLimit * 5,
       filter: {
         must: filters,
       },
@@ -347,23 +400,29 @@ class Embedder {
     resolve(
       chunks
         .map(r => ({ ...r, score: scoreMap[r.id] }))
-        .filter(r => r.score >= 0.6)
+        .filter(r => r.score >= MIN_RELEVANCE_SCORE)
         .sort((a, b) => a.score > b.score ? -1 : 1)
     );
   }
 
   public async search(user: User | undefined, options: SearchOptions): Promise<ItemSearchResults[]> {
-    const data: FetchedChunk[] = await new Promise((resolve) => {
+    const data: FetchedChunk[] = await new Promise((resolve, reject) => {
       this.addJob({
         type: 'search',
-        data: { user, options, resolve },
+        data: { user, options, resolve, reject },
       })
     });
 
     const fetchedItems: { [id: number]: ItemSearchResults } = {};
     for (const chunk of data) {
       if (!(chunk.item_id in fetchedItems)) {
-        const item = await api.item.getOne(user, { 'item.id': chunk.item_id });
+        let item: Item;
+        try {
+          item = await api.item.getOne(user, { 'item.id': chunk.item_id });
+        } catch (err) {
+          logger.warn(`Semantic search: skipping item ${chunk.item_id}, failed to fetch: ${err}`);
+          continue;
+        }
         fetchedItems[chunk.item_id] = {
           item,
           chunks: [],
@@ -374,7 +433,9 @@ class Embedder {
       fetchedItems[chunk.item_id].topScore = Math.max(fetchedItems[chunk.item_id].topScore, chunk.score);
     }
 
-    return Object.values(fetchedItems).sort((a, b) => a.topScore > b.topScore ? -1 : 1);
+    return Object.values(fetchedItems)
+      .sort((a, b) => a.topScore > b.topScore ? -1 : 1)
+      .slice(0, options.limit ?? 20);
   }
 }
 

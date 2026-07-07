@@ -61,6 +61,9 @@ exports.default = {
             if (universe.obj_data.semanticSearchEnabled && !prevSemanticSearchSetting) {
                 embedding_1.default.enableEmbed(universe);
             }
+            else if (!universe.obj_data.semanticSearchEnabled && prevSemanticSearchSetting) {
+                embedding_1.default.deleteForUniverse(universe.id);
+            }
             if (req.body.next) {
                 res.redirect(req.body.next);
             }

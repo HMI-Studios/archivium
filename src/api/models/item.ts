@@ -758,6 +758,11 @@ export class ItemAPI {
         throw new ModelError('Failed to insert item');
       }
 
+      // TODO more type nonsense
+      if ((universe.obj_data as any).semanticSearchEnabled) {
+        embedder.addJob({ type: 'check', itemId: data.insertId });
+      }
+
       return data;
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') throw new ValidationError(`Shortname "${shortname}" already in use in this universe, please choose another.`);
@@ -1410,5 +1415,7 @@ export class ItemAPI {
         `, [item.id]);
       await conn.execute(`DELETE FROM item WHERE id = ?;`, [item.id]);
     });
+
+    await embedder.deleteForItem(item.id);
   }
 }

@@ -1,10 +1,11 @@
 import { PoolConnection, QueryResult, ResultSetHeader } from 'mysql2/promise';
 import { API } from '..';
+import embedder from '../../embedding';
 import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
+import { IndexedDocument } from '../../lib/tiptapHelpers';
 import { BaseOptions, Tier, executeQuery, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
 import { Item, ItemEvent } from './item';
 import { User } from './user';
-import { IndexedDocument } from '../../lib/tiptapHelpers';
 
 export type UniverseAccessRequest<T = boolean> = {
   universe_id: number,
@@ -519,5 +520,7 @@ export class UniverseAPI {
       `, [universe.id]);
       await conn.execute(`DELETE FROM universe WHERE id = ?;`, [universe.id]);
     });
+
+    await embedder.deleteForUniverse(universe.id);
   }
 }

@@ -11,7 +11,51 @@ const logger_1 = __importDefault(require("./logger"));
 const config_1 = require("./config");
 const api_1 = __importDefault(require("./api"));
 const COLLECTION_NAME = 'archivium-embeds';
+const EMBEDDING_MODEL = 'text-embedding-nomic-embed-text-v1.5';
+const EMBED_TIMEOUT_MS = 20_000;
+const EMBED_RETRY_DELAY_MS = 1_000;
+const MIN_RELEVANCE_SCORE = 0.6;
+const MAX_CHUNK_CHARS = 8_000;
 const qdrantClient = new js_client_rest_1.QdrantClient({ host: 'localhost', port: 6333 });
+async function requestEmbedding(input) {
+    let lastErr;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt > 0)
+            await waitFor(EMBED_RETRY_DELAY_MS);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
+        try {
+            const response = await fetch(config_1.EMBEDDING_API_URL, {
+                method: 'POST',
+                signal: controller.signal,
+                headers: {
+                    'Authorization': `Bearer ${config_1.LMSTER_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: EMBEDDING_MODEL,
+                    input,
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(`Embedding request failed: ${response.status} ${response.statusText}`);
+            }
+            const { data } = await response.json();
+            const vector = data?.[0]?.embedding;
+            if (!Array.isArray(vector)) {
+                throw new Error('Embedding response missing data[0].embedding');
+            }
+            return vector;
+        }
+        catch (err) {
+            lastErr = err;
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+    throw lastErr;
+}
 async function ensureCollection() {
     logger_1.default.info('Starting Qdrant...');
     const collections = await qdrantClient.getCollections();
@@ -70,6 +114,23 @@ class Embedder {
         }
         this.start();
     }
+    // Must be called before items/universes are deleted to ensure embeddings are cleaned up!
+    async deleteForItem(itemId) {
+        await qdrantClient.delete(COLLECTION_NAME, {
+            wait: true,
+            filter: {
+                must: [{ key: 'itemId', match: { value: itemId } }],
+            },
+        });
+    }
+    async deleteForUniverse(universeId) {
+        await qdrantClient.delete(COLLECTION_NAME, {
+            wait: true,
+            filter: {
+                must: [{ key: 'universeId', match: { value: universeId } }],
+            },
+        });
+    }
     async nextJob() {
         const job = this.queue.shift();
         if (!job)
@@ -91,6 +152,8 @@ class Embedder {
         catch (err) {
             console.error(err);
             logger_1.default.error(`Bad job: ${JSON.stringify(job)}`);
+            const reject = job.data?.reject;
+            reject?.(err);
         }
     }
     async checkItem(id) {
@@ -144,38 +207,36 @@ class Embedder {
         try {
             const body = (0, tiptapHelpers_1.indexedToJson)(indexed);
             const chunks = [];
-            const bodyContent = (0, tiptapHelpers_1.getTextContent)(body.content);
+            const bodyContent = body.content.map(tiptapHelpers_1.getTextContent).join('\n\n').slice(0, MAX_CHUNK_CHARS);
             chunks.push({
                 text: bodyContent,
                 path: '',
                 size: Math.round(bodyContent.split(/\s+/).length * 1.3),
                 scope: 'item',
             });
+            const pushChunk = (chunk) => {
+                const text = chunk.text.trim();
+                if (text.length > MAX_CHUNK_CHARS) {
+                    logger_1.default.warn(`Embedding chunk exceeded ${MAX_CHUNK_CHARS} chars, truncating (item chunk path: "${chunk.path}")`);
+                }
+                chunks.push({ ...chunk, text: text.slice(0, MAX_CHUNK_CHARS) });
+            };
             let currentChunk = { text: '', path: '', size: 0, scope: 'section' };
             for (const node of body.content) {
                 const content = (0, tiptapHelpers_1.getTextContent)(node);
                 const tokenCount = Math.round(content.split(/\s+/).length * 1.3);
                 if (node.type === 'heading' && currentChunk.size > MIN_SIZE) {
-                    chunks.push({
-                        ...currentChunk,
-                        text: currentChunk.text.trim(),
-                    });
+                    pushChunk(currentChunk);
                     currentChunk = { text: '', path: content, size: 0, scope: 'section' };
                 }
                 else if (currentChunk.size + tokenCount > MAX_SIZE) {
-                    chunks.push({
-                        ...currentChunk,
-                        text: currentChunk.text.trim(),
-                    });
+                    pushChunk(currentChunk);
                     currentChunk = { text: '', path: currentChunk.path, size: 0, scope: 'section' };
                 }
                 currentChunk.text += `${content}\n\n`;
                 currentChunk.size += tokenCount;
             }
-            chunks.push({
-                ...currentChunk,
-                text: currentChunk.text.trim(),
-            });
+            pushChunk(currentChunk);
             return chunks;
         }
         catch (err) {
@@ -191,25 +252,13 @@ class Embedder {
 
       ${chunk.text}
     `;
-        const response = await fetch("http://hmi.dynu.net:1234/v1/embeddings", {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config_1.LMSTER_KEY}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'text-embedding-nomic-embed-text-v1.5',
-                input: embedText,
-            })
-        });
+        const vector = await requestEmbedding(embedText);
         const hash = (0, hashUtils_1.createHash)(chunk.text);
         const { insertId } = await (0, utils_1.executeQuery)(`
       INSERT INTO itemembeddedchunks
       (chunk_id, item_id, scope, heading_path, content, token_count, hash)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [chunkId, itemId, chunk.scope, chunk.path, chunk.text, chunk.size, hash]);
-        const { data } = await response.json();
-        const vector = data[0].embedding;
         const payload = { universeId, itemId, itemTitle, itemType, chunkId, path: chunk.path, scope: chunk.scope };
         await qdrantClient.upsert(COLLECTION_NAME, {
             wait: true,
@@ -235,23 +284,23 @@ class Embedder {
     }
     async doSearch(user, options, resolve) {
         const universes = await api_1.default.universe.getMany(user);
-        const response = await fetch("http://hmi.dynu.net:1234/v1/embeddings", {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${config_1.LMSTER_KEY}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: 'text-embedding-nomic-embed-text-v1.5',
-                input: `search_query: ${options.query}`,
-            })
-        });
-        const { data } = await response.json();
-        const vector = data[0].embedding;
+        const searchableUniverseIds = universes
+            .filter(u => {
+            try {
+                return !!u.obj_data?.semanticSearchEnabled;
+            }
+            catch {
+                return false;
+            }
+        })
+            .map(u => u.id);
+        if (searchableUniverseIds.length === 0)
+            return resolve([]);
+        const vector = await requestEmbedding(`search_query: ${options.query}`);
         const filters = [
             {
                 key: 'universeId',
-                match: { any: universes.map(u => u.id) },
+                match: { any: searchableUniverseIds },
             },
         ];
         if (options.universeId) {
@@ -260,9 +309,11 @@ class Embedder {
                 match: { value: Number(options.universeId) },
             });
         }
+        // Over-fetch chunks since multiple chunks can belong to the same item; search() truncates to options.limit items.
+        const itemLimit = options.limit ?? 20;
         const { points } = await qdrantClient.query(COLLECTION_NAME, {
             query: vector,
-            limit: options.limit ?? 20,
+            limit: itemLimit * 5,
             filter: {
                 must: filters,
             },
@@ -274,20 +325,27 @@ class Embedder {
         const chunks = await (0, utils_1.executeQuery)(`SELECT * FROM itemembeddedchunks WHERE id IN (${chunkIds.map(() => '?').join(',')})`, [...chunkIds]);
         resolve(chunks
             .map(r => ({ ...r, score: scoreMap[r.id] }))
-            .filter(r => r.score >= 0.6)
+            .filter(r => r.score >= MIN_RELEVANCE_SCORE)
             .sort((a, b) => a.score > b.score ? -1 : 1));
     }
     async search(user, options) {
-        const data = await new Promise((resolve) => {
+        const data = await new Promise((resolve, reject) => {
             this.addJob({
                 type: 'search',
-                data: { user, options, resolve },
+                data: { user, options, resolve, reject },
             });
         });
         const fetchedItems = {};
         for (const chunk of data) {
             if (!(chunk.item_id in fetchedItems)) {
-                const item = await api_1.default.item.getOne(user, { 'item.id': chunk.item_id });
+                let item;
+                try {
+                    item = await api_1.default.item.getOne(user, { 'item.id': chunk.item_id });
+                }
+                catch (err) {
+                    logger_1.default.warn(`Semantic search: skipping item ${chunk.item_id}, failed to fetch: ${err}`);
+                    continue;
+                }
                 fetchedItems[chunk.item_id] = {
                     item,
                     chunks: [],
@@ -297,7 +355,9 @@ class Embedder {
             fetchedItems[chunk.item_id].chunks.push(chunk);
             fetchedItems[chunk.item_id].topScore = Math.max(fetchedItems[chunk.item_id].topScore, chunk.score);
         }
-        return Object.values(fetchedItems).sort((a, b) => a.topScore > b.topScore ? -1 : 1);
+        return Object.values(fetchedItems)
+            .sort((a, b) => a.topScore > b.topScore ? -1 : 1)
+            .slice(0, options.limit ?? 20);
     }
 }
 const embedder = new Embedder();
