@@ -80,6 +80,10 @@ app.use(`${ADDR_PREFIX}/notifworker.js`, express.static(path.join(__dirname, 'st
 // Serve static assets
 app.use(`${ADDR_PREFIX}/static`, express.static(path.join(__dirname, 'static/')));
 
+// Load MCP server
+import loadMcp from './mcp';
+loadMcp(app);
+
 // Load view routes
 import loadViews from './views';
 loadViews(app);
@@ -89,10 +93,6 @@ import loadRoutes from './api/routes';
 import { handleAsNull } from './api/utils';
 import { NotFoundError } from './errors';
 loadRoutes(app, upload);
-
-// Load MCP server
-import loadMcp from './mcp';
-loadMcp(app);
 
 
 /*
