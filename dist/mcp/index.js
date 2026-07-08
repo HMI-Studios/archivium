@@ -31,6 +31,14 @@ function methodNotAllowed(_req, res, next) {
     next();
 }
 function loadMcp(app) {
+    // The view layer's global middleware preemptively sets Content-Type: text/html
+    // on every request; Express's res.json()/res.send() won't override a header
+    // that's already set, so without this, all OAuth/MCP JSON responses (and
+    // error bodies) would be mislabeled as text/html despite serving valid JSON.
+    app.use((req, res, next) => {
+        res.removeHeader('Content-Type');
+        next();
+    });
     app.use((0, router_js_1.mcpAuthRouter)({
         provider,
         issuerUrl,

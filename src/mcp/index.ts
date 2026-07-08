@@ -31,6 +31,11 @@ function methodNotAllowed(_req: Request, res: Response, next: () => void): void 
 }
 
 export default function loadMcp(app: Express): void {
+  app.use((req, res, next) => {
+    res.removeHeader('Content-Type');
+    next();
+  });
+
   app.use(mcpAuthRouter({
     provider,
     issuerUrl,
