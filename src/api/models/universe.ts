@@ -25,6 +25,9 @@ export type Universe = {
   is_public: boolean,
   discussion_enabled: boolean,
   discussion_open: boolean,
+  mcp_items_enabled: boolean,
+  mcp_notes_enabled: boolean,
+  mcp_discussions_enabled: boolean,
   obj_data: Record<string, any>,
   authors: { [id: number]: string },
   author_permissions: { [id: number]: perms },
@@ -211,7 +214,7 @@ export class UniverseAPI {
     if (!user) throw new UnauthorizedError();
 
     try {
-      const { title, shortname, is_public, discussion_enabled, discussion_open, obj_data } = body;
+      const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, obj_data } = body;
 
       const shortnameError = this.validateShortname(shortname);
       if (shortnameError) throw new ValidationError(shortnameError);
@@ -225,10 +228,13 @@ export class UniverseAPI {
           is_public,
           discussion_enabled,
           discussion_open,
+          mcp_items_enabled,
+          mcp_notes_enabled,
+          mcp_discussions_enabled,
           obj_data,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
       `;
       const data = await executeQuery<ResultSetHeader>(queryString1, [
         title,
@@ -237,6 +243,9 @@ export class UniverseAPI {
         is_public,
         discussion_enabled,
         discussion_open,
+        Boolean(mcp_items_enabled),
+        Boolean(mcp_notes_enabled),
+        Boolean(mcp_discussions_enabled),
         obj_data,
         new Date(),
         new Date(),
@@ -255,10 +264,16 @@ export class UniverseAPI {
   }
 
   async put(user: User | undefined, universeShortname: string, changes): Promise<number> {
-    const { title, shortname, is_public, discussion_enabled, discussion_open, obj_data } = changes;
+    const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, obj_data } = changes;
 
     if (!title) throw new ValidationError('Title is required.');
     const universe = await this.getOne(user, { shortname: universeShortname }, perms.WRITE);
+
+    // MCP access toggles are a premium-tier feature; force them off on non-premium universes.
+    const isPremium = universe.tier === tiers.PREMIUM;
+    const mcpItems = isPremium && Boolean(mcp_items_enabled);
+    const mcpNotes = isPremium && Boolean(mcp_notes_enabled);
+    const mcpDiscussions = isPremium && Boolean(mcp_discussions_enabled);
 
     if (shortname !== null && shortname !== undefined && shortname !== universe.shortname) {
       // The item shortname has changed, we need to update all links to it to reflect this
@@ -277,11 +292,14 @@ export class UniverseAPI {
         is_public = ?,
         discussion_enabled = ?,
         discussion_open = ?,
+        mcp_items_enabled = ?,
+        mcp_notes_enabled = ?,
+        mcp_discussions_enabled = ?,
         obj_data = ?,
         updated_at = ?
       WHERE id = ?
     `;
-    await executeQuery(queryString, [title, shortname ?? universe.shortname, is_public, discussion_enabled, discussion_open, obj_data, new Date(), universe.id]);
+    await executeQuery(queryString, [title, shortname ?? universe.shortname, is_public, discussion_enabled, discussion_open, mcpItems, mcpNotes, mcpDiscussions, obj_data, new Date(), universe.id]);
     return universe.id;
   }
 

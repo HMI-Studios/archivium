@@ -102,6 +102,9 @@ CREATE TABLE universe (
   is_public BOOLEAN NOT NULL,
   discussion_enabled BOOLEAN NOT NULL,
   discussion_open BOOLEAN NOT NULL,
+  mcp_items_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  mcp_notes_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  mcp_discussions_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   obj_data JSON NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   PRIMARY KEY (id)

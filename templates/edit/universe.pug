@@ -143,6 +143,29 @@ block content
       small(style={ 'grid-column': '2 / 4' })
         i #{T('This item will be shown to users that don\'t have access to your universe instead of the "Access Denied" page.')}
 
+    if universe.tier >= tiers.PREMIUM
+      h3 #{T('MCP Access')}
+      .mb-2
+        small #{T('Allow LLM tools to read the selected parts of this universe through Archivium\'s MCP connector.')}
+
+      .inputGroup
+        label(for='mcp_items_enabled') #{T('Expose items')}:
+        label.switch
+          input#mcp_items_enabled(type='checkbox' name='mcp_items_enabled' checked=Boolean(universe.mcp_items_enabled))
+          span.slider
+
+      .inputGroup
+        label(for='mcp_notes_enabled') #{T('Expose public notes')}:
+        label.switch
+          input#mcp_notes_enabled(type='checkbox' name='mcp_notes_enabled' checked=Boolean(universe.mcp_notes_enabled))
+          span.slider
+
+      .inputGroup
+        label(for='mcp_discussions_enabled') #{T('Expose discussions')}:
+        label.switch
+          input#mcp_discussions_enabled(type='checkbox' name='mcp_discussions_enabled' checked=Boolean(universe.mcp_discussions_enabled))
+          span.slider
+
     div
       input#obj_data(type='hidden' name='obj_data' value='{}')
       button(type='submit') #{T('Save Changes')}
