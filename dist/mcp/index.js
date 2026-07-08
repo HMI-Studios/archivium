@@ -5,34 +5,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = loadMcp;
 const streamableHttp_js_1 = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
+const router_js_1 = require("@modelcontextprotocol/sdk/server/auth/router.js");
+const bearerAuth_js_1 = require("@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js");
 const api_1 = __importDefault(require("../api"));
 const config_1 = require("../config");
 const logger_1 = __importDefault(require("../logger"));
 const server_1 = require("./server");
-/**
- * PHASE 1 authentication: a single static bearer token (MCP_BEARER_TOKEN) that
- * maps to one configured Archivium user (MCP_BEARER_USER). This lets us validate
- * the tools with the MCP Inspector before the full OAuth layer (Phase 2) exists.
- * When OAuth lands, this is replaced by the SDK's requireBearerAuth backed by the
- * OAuth provider; the tool code in server.ts is unchanged.
- */
-async function authenticate(req) {
-    const header = req.headers['authorization'];
-    if (typeof header !== 'string' || !header.startsWith('Bearer '))
+const oauth_1 = require("./oauth");
+const issuerUrl = new URL(`https://${config_1.DOMAIN}`);
+const resourceServerUrl = new URL(`https://${config_1.DOMAIN}/mcp`);
+const resourceMetadataUrl = (0, router_js_1.getOAuthProtectedResourceMetadataUrl)(resourceServerUrl);
+const provider = new oauth_1.ArchiviumOAuthProvider();
+async function resolveUser(req) {
+    const userId = req.auth?.extra?.userId;
+    if (typeof userId !== 'number')
         return null;
-    const token = header.slice('Bearer '.length).trim();
-    if (!config_1.MCP_BEARER_TOKEN || token !== config_1.MCP_BEARER_TOKEN)
-        return null;
-    const user = await api_1.default.user.getOne({ 'user.username': config_1.MCP_BEARER_USER }).catch(() => null);
-    return user ?? null;
-}
-function unauthorized(res) {
-    res.set('WWW-Authenticate', 'Bearer realm="archivium-mcp"');
-    res.status(401).json({
-        jsonrpc: '2.0',
-        error: { code: -32001, message: 'Unauthorized.' },
-        id: null,
-    });
+    return api_1.default.user.getOne({ 'user.id': userId }).catch(() => null);
 }
 function methodNotAllowed(_req, res, next) {
     res.status(405).json({
@@ -43,14 +31,17 @@ function methodNotAllowed(_req, res, next) {
     next();
 }
 function loadMcp(app) {
-    if (!config_1.MCP_BEARER_TOKEN || !config_1.MCP_BEARER_USER) {
-        logger_1.default.info('MCP server disabled (set MCP_BEARER_TOKEN and MCP_BEARER_USER to enable).');
-        return;
-    }
-    app.post('/mcp', async (req, res, next) => {
-        const user = await authenticate(req);
+    app.use((0, router_js_1.mcpAuthRouter)({
+        provider,
+        issuerUrl,
+        resourceServerUrl,
+        resourceName: 'Archivium',
+    }));
+    const bearerAuth = (0, bearerAuth_js_1.requireBearerAuth)({ verifier: provider, resourceMetadataUrl });
+    app.post('/mcp', bearerAuth, async (req, res, next) => {
+        const user = await resolveUser(req);
         if (!user) {
-            unauthorized(res);
+            res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized.' }, id: null });
             return next();
         }
         try {
@@ -76,10 +67,10 @@ function loadMcp(app) {
                     id: null,
                 });
             }
-            next();
         }
+        next();
     });
-    app.get('/mcp', methodNotAllowed);
-    app.delete('/mcp', methodNotAllowed);
-    logger_1.default.info('MCP server mounted at /mcp');
+    app.get('/mcp', bearerAuth, methodNotAllowed);
+    app.delete('/mcp', bearerAuth, methodNotAllowed);
+    logger_1.default.info('MCP server mounted at /mcp (OAuth 2.1)');
 }

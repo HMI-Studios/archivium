@@ -4,7 +4,7 @@ import api from '../api';
 import { perms } from '../api/utils';
 import { User } from '../api/models/user';
 import { BasicItem, Item } from '../api/models/item';
-import { ParsedUniverse } from '../api/models/universe';
+import { Universe } from '../api/models/universe';
 import { ForbiddenError, NotFoundError } from '../errors';
 import logger from '../logger';
 import * as gate from './gating';
@@ -33,7 +33,7 @@ async function requireExposedUniverse(
   user: User,
   shortname: string,
   capability: 'items' | 'notes' | 'discussions',
-): Promise<ParsedUniverse> {
+): Promise<Universe> {
   const universe = await api.universe.getOne(user, { 'universe.shortname': shortname }, perms.READ);
   const exposed =
     capability === 'items' ? gate.itemsExposed(universe)

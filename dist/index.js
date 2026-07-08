@@ -68,6 +68,8 @@ const upload = (0, multer_1.default)({
 node_cron_1.default.schedule('0 0 * * *', () => {
     logger_1.default.info('Purging stale sessions...');
     api_1.default.session.purge().then(({ affectedRows }) => logger_1.default.info(`Purged ${affectedRows} sessions`));
+    logger_1.default.info('Purging expired OAuth codes/tokens...');
+    api_1.default.oauth.purge();
     logger_1.default.info('Running daily DB export...');
     (0, backup_1.default)();
 });

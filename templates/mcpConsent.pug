@@ -1,0 +1,27 @@
+extends layout.pug
+
+block title
+  title #{T('Authorize %s', clientName)}
+
+block content
+  h2 #{T('Authorize Application')}
+  p
+    b #{clientName}
+    |  #{T('is requesting access to read worldbuilding data from your Archivium account, on your behalf, via the Model Context Protocol.')}
+  p
+    small #{T('This will only allow reading items, public notes, and discussions in universes where MCP access is enabled. It cannot make changes to your account or content.')}
+  form(method='POST' action=`${ADDR_PREFIX}/authorize`)
+    input(type='hidden' name='client_id' value=clientId)
+    input(type='hidden' name='redirect_uri' value=redirectUri)
+    input(type='hidden' name='response_type' value='code')
+    input(type='hidden' name='code_challenge' value=codeChallenge)
+    input(type='hidden' name='code_challenge_method' value='S256')
+    if scope
+      input(type='hidden' name='scope' value=scope)
+    if state
+      input(type='hidden' name='state' value=state)
+    if resource
+      input(type='hidden' name='resource' value=resource)
+    .d-flex.gap-2.mt-2
+      button(type='submit' name='decision' value='approve') #{T('Allow')}
+      button(type='submit' name='decision' value='deny') #{T('Deny')}

@@ -46,6 +46,9 @@ cron.schedule('0 0 * * *', () => {
   logger.info('Purging stale sessions...');
   api.session.purge().then(({ affectedRows }) => logger.info(`Purged ${affectedRows} sessions`));
 
+  logger.info('Purging expired OAuth codes/tokens...');
+  api.oauth.purge();
+
   logger.info('Running daily DB export...');
   backup();
 });

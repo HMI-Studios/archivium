@@ -8,6 +8,7 @@ const image_1 = require("./models/image");
 const item_1 = require("./models/item");
 const note_1 = require("./models/note");
 const notification_1 = require("./models/notification");
+const oauth_1 = require("./models/oauth");
 const session_1 = require("./models/session");
 const story_1 = require("./models/story");
 const universe_1 = require("./models/universe");
@@ -20,6 +21,7 @@ class API {
     item;
     note;
     notification;
+    oauth;
     session;
     story;
     universe;
@@ -32,6 +34,7 @@ class API {
         this.item = new item_1.ItemAPI(this);
         this.note = new note_1.NoteAPI(this);
         this.notification = new notification_1.NotificationAPI(this);
+        this.oauth = new oauth_1.OAuthAPI(this);
         this.session = new session_1.SessionAPI(this);
         this.story = new story_1.StoryAPI(this);
         this.universe = new universe_1.UniverseAPI(this);
