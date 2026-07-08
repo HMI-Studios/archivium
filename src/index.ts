@@ -87,6 +87,10 @@ import { handleAsNull } from './api/utils';
 import { NotFoundError } from './errors';
 loadRoutes(app, upload);
 
+// Load MCP server
+import loadMcp from './mcp';
+loadMcp(app);
+
 
 /*
   ACCOUNT ROUTES

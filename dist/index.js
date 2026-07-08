@@ -100,6 +100,9 @@ const routes_1 = __importDefault(require("./api/routes"));
 const utils_1 = require("./api/utils");
 const errors_1 = require("./errors");
 (0, routes_1.default)(app, upload);
+// Load MCP server
+const mcp_1 = __importDefault(require("./mcp"));
+(0, mcp_1.default)(app);
 /*
   ACCOUNT ROUTES
 */

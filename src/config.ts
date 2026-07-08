@@ -31,6 +31,8 @@ export const {
   WEB_PUSH_ENABLED,
   VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY,
+  MCP_BEARER_TOKEN,
+  MCP_BEARER_USER,
 } = formatEnv({ ...process.env });
 
 export const DB_CONFIG = {
