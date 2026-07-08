@@ -11,6 +11,15 @@ const embedding_1 = __importDefault(require("../../embedding"));
 const errors_1 = require("../../errors");
 const logger_1 = __importDefault(require("../../logger"));
 const staticDir = path_1.default.join(__dirname, '../../static');
+/**
+ * Finds the current content-hashed filename for a lazy-loaded editor chunk
+ * (e.g. 'item-edit' -> 'item-edit.<hash>.chunk.js'), so the page can preload
+ * it instead of waiting for the bundle to run and discover it needs it.
+ */
+async function findEditorChunk(prefix) {
+    const files = await promises_1.default.readdir(path_1.default.join(staticDir, 'editor')).catch(() => []);
+    return files.find((file) => new RegExp(`^${prefix}\\.[a-f0-9]+\\.chunk\\.js$`).test(file)) ?? null;
+}
 exports.default = {
     /* Terms and Agreements */
     async privacyPolicy(_, res) {
@@ -105,6 +114,12 @@ exports.default = {
         if (params[0] === 'universes' && params[1]) {
             const [, universeShort] = params;
             data.universe = await api_1.default.universe.getOne(req.session.user, { shortname: universeShort });
+        }
+        if (params[0] === 'universes' && params[2] === 'items' && params[3]) {
+            data.preloadChunk = await findEditorChunk('item-edit');
+        }
+        else if (params[0] === 'stories' && params[2]) {
+            data.preloadChunk = await findEditorChunk('chapter-edit');
         }
         res.prepareRender('editor', data);
     }

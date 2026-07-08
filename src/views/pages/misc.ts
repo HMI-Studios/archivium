@@ -10,6 +10,12 @@ import logger from '../../logger';
 
 const staticDir = path.join(__dirname, '../../static');
 
+// Find the bundle chunk for the current editor page to preload it
+async function findEditorChunk(prefix: string): Promise<string | null> {
+  const files = await fs.readdir(path.join(staticDir, 'editor')).catch(() => [] as string[]);
+  return files.find((file) => new RegExp(`^${prefix}\\.[a-f0-9]+\\.chunk\\.js$`).test(file)) ?? null;
+}
+
 export default {
   /* Terms and Agreements */
   async privacyPolicy(_, res) {
@@ -108,6 +114,13 @@ export default {
       const [, universeShort] = params;
       data.universe = await api.universe.getOne(req.session.user, { shortname: universeShort });
     }
+
+    if (params[0] === 'universes' && params[2] === 'items' && params[3]) {
+      data.preloadChunk = await findEditorChunk('item-edit');
+    } else if (params[0] === 'stories' && params[2]) {
+      data.preloadChunk = await findEditorChunk('chapter-edit');
+    }
+
     res.prepareRender('editor', data);
   }
 } satisfies Record<string, RouteHandler>;
