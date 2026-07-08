@@ -18,6 +18,7 @@ export interface TiptapContext {
   currentUniverse: string | null;
   universeLink: (universe: string) => string;
   itemExists: (universe: string, item: string) => boolean;
+  resolveItemExists?: (shorthand: string) => Promise<void>;
   headings: { title: string, level: number }[],
   items?: () => Record<string, { title: string, tags?: string[] }>;
 }

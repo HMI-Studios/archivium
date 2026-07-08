@@ -54,6 +54,19 @@ const ydoc = new Y.Doc();
 const yItem = ydoc.getMap('item');
 const yObjData = ydoc.getMap('obj_data');
 
+async function warmItemExistsCache(shorthand: string, defaultUniverse: string): Promise<void> {
+  const link = extractLinkData(shorthand);
+  if (!link.item) return;
+  const universe = link.universe ?? defaultUniverse;
+  if (!(universe in itemExistsCache)) itemExistsCache[universe] = {};
+  if (!(link.item in itemExistsCache[universe])) {
+    const existsFetcher = new BulkExistsFetcher();
+    const fetchPromise = existsFetcher.exists(universe, link.item);
+    existsFetcher.fetchAll();
+    itemExistsCache[universe][link.item] = await fetchPromise;
+  }
+}
+
 function syncItemExistsCache() {
   const remoteCache = ydoc.getMap('config').get('itemExistsCache') as typeof itemExistsCache | undefined;
   if (remoteCache) {
@@ -92,6 +105,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     itemExists(universe, item): boolean {
       return (itemExistsCache[universe] ?? {})[item] ?? false;
     },
+    resolveItemExists: (shorthand) => warmItemExistsCache(shorthand, universeShort),
     headings: [],
     items: () => itemMapRef.current,
   };
@@ -301,19 +315,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
         getLink={async (url, type) => {
           if (url?.startsWith('@')) {
             if (type === 'link') {
-              const link = extractLinkData(url);
-              if (link.item) {
-                const universe = link.universe ?? universeShort;
-                if (!(universe in itemExistsCache)) {
-                  itemExistsCache[universe] = {};
-                }
-                if (!(link.item in itemExistsCache[universe])) {
-                  const existsFetcher = new BulkExistsFetcher();
-                  const fetchPromise = existsFetcher.exists(universe, link.item);
-                  existsFetcher.fetchAll();
-                  itemExistsCache[universe][link.item] = await fetchPromise;
-                }
-              }
+              await warmItemExistsCache(url, universeShort);
             } else if (type === 'image') {
               const [cmd, index, alt, height, width] = splitIgnoringQuotes(url.substring(1));
               if (cmd === 'img') {

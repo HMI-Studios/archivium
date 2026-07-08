@@ -1,5 +1,6 @@
-import { InputRule, mergeAttributes } from '@tiptap/core';
+import { Editor, InputRule, mergeAttributes } from '@tiptap/core';
 import TiptapLink, { LinkOptions } from '@tiptap/extension-link';
+import { MarkType } from '@tiptap/pm/model';
 import { TiptapContext } from '..';
 
 export interface ResolveResult {
@@ -15,6 +16,28 @@ interface ExtendedLinkOptions extends LinkOptions {
 }
 
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)$/;
+
+async function revalidateShorthandLink(editor: Editor | undefined, type: MarkType, href: string, context?: TiptapContext) {
+  if (!editor || !context?.resolveItemExists) return;
+  await context.resolveItemExists(href);
+  if (editor.isDestroyed) return;
+
+  const { state } = editor;
+  const tr = state.tr;
+  let touched = false;
+  state.doc.descendants((node, pos) => {
+    if (!node.isText) return;
+    const mark = node.marks.find(m => m.type === type && m.attrs.href === href);
+    if (mark) {
+      tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, _revalidated: (mark.attrs._revalidated ?? 0) + 1 }));
+      touched = true;
+    }
+  });
+  if (touched) {
+    tr.setMeta('addToHistory', false);
+    editor.view.dispatch(tr);
+  }
+}
 
 const Link = TiptapLink.configure({
   autolink: true,
@@ -40,6 +63,10 @@ const Link = TiptapLink.configure({
       title: {
         default: null,
       },
+      _revalidated: {
+        default: 0,
+        rendered: false,
+      },
     }
   },
 
@@ -62,6 +89,8 @@ const Link = TiptapLink.configure({
 
   addInputRules() {
     const type = this.type;
+    const editor = this.editor;
+    const context = this.options.context;
     return [
       new InputRule({
         find: MD_LINK_RE,
@@ -73,6 +102,10 @@ const Link = TiptapLink.configure({
           tr.insertText(label, range.from, range.to);
           tr.addMark(range.from, range.from + label.length, type.create({ href: target }));
           tr.removeStoredMark(type);
+
+          if (target.startsWith('@')) {
+            revalidateShorthandLink(editor, type, target, context);
+          }
         }
       }),
     ]

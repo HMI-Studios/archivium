@@ -14,6 +14,19 @@ export type ChapterEditProps = {
 
 const itemExistsCache: { [universe: string]: { [item: string]: boolean } } = {};
 
+async function warmItemExistsCache(shorthand: string, defaultUniverse: string): Promise<void> {
+  const link = extractLinkData(shorthand);
+  if (!link.item) return;
+  const universe = link.universe ?? defaultUniverse;
+  if (!(universe in itemExistsCache)) itemExistsCache[universe] = {};
+  if (!(link.item in itemExistsCache[universe])) {
+    const existsFetcher = new BulkExistsFetcher();
+    const fetchPromise = existsFetcher.exists(universe, link.item);
+    existsFetcher.fetchAll();
+    itemExistsCache[universe][link.item] = await fetchPromise;
+  }
+}
+
 export default function ChapterEdit({ universeLink }: ChapterEditProps) {
   const { storyShort, chapterIndex } = useParams();
 
@@ -29,6 +42,7 @@ export default function ChapterEdit({ universeLink }: ChapterEditProps) {
     itemExists(universe, item): boolean {
       return (itemExistsCache[universe] ?? {})[item] ?? false;
     },
+    resolveItemExists: (shorthand) => warmItemExistsCache(shorthand, context.currentUniverse),
     headings: [],
   };
 
@@ -126,19 +140,7 @@ export default function ChapterEdit({ universeLink }: ChapterEditProps) {
           getLink={async (url, type) => {
             if (url?.startsWith('@')) {
               if (type === 'link') {
-                const link = extractLinkData(url);
-                if (link.item) {
-                  const universe = link.universe ?? story.universe_short;
-                  if (!(universe in itemExistsCache)) {
-                    itemExistsCache[universe] = {};
-                  }
-                  if (!(link.item in itemExistsCache[universe])) {
-                    const existsFetcher = new BulkExistsFetcher();
-                    const fetchPromise = existsFetcher.exists(universe, link.item);
-                    existsFetcher.fetchAll();
-                    itemExistsCache[universe][link.item] = await fetchPromise;
-                  }
-                }
+                await warmItemExistsCache(url, story.universe_short);
               }
             }
 
