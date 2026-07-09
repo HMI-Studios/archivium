@@ -16,6 +16,7 @@ async function tryRenderContent(req, content, universeShortname) {
         const links = [];
         const headings = [];
         const jsonBody = (0, tiptapHelpers_1.indexedToJson)(content, (href) => links.push((0, editor_1.extractLinkData)(href)), (title, level) => headings.push({ title, level }));
+        (0, tiptapHelpers_1.annotateTocScopes)(jsonBody);
         const itemsPerUniverse = {};
         /* Because Tiptap rendering cannot be async, we extract the links we'll need to check ahead of time. */
         await Promise.all(links.map(async (link) => {

@@ -69,8 +69,8 @@ export function jsonToIndexed(doc: any): IndexedDocument {
   return { text: textBuffer, structure };
 }
 
-function _getTextContent(node: CombinedNode) {
-  return `${node.text ?? ''}${(node.content ?? []).map(_getTextContent).join('')}`;
+export function getTextContent(node: CombinedNode) {
+  return `${node.text ?? ''}${(node.content ?? []).map(getTextContent).join('')}`;
 }
 
 /**
@@ -122,7 +122,7 @@ export function indexedToJson(indexed: IndexedDocument, linkHandler?: (href: str
     }
 
     if (node.type === 'heading' && headingHandler) {
-      const text = _getTextContent(combinedNode);
+      const text = getTextContent(combinedNode);
       if (text) headingHandler(text, combinedNode.attrs?.level ?? 1);
     }
 
@@ -130,4 +130,39 @@ export function indexedToJson(indexed: IndexedDocument, linkHandler?: (href: str
   }
 
   return { type: 'doc', content: structure.map(walk) };
+}
+
+type Heading = { title: string, level: number };
+type TocSection = { level: number, headings: Heading[], tocNodes: CombinedNode[] };
+
+export function annotateTocScopes(doc: CombinedNode): void {
+  const stack: TocSection[] = [];
+
+  function closeSectionsAtOrAbove(level: number) {
+    while (stack.length && stack[stack.length - 1].level >= level) {
+      const section = stack.pop()!;
+      for (const tocNode of section.tocNodes) {
+        tocNode.attrs = { ...tocNode.attrs, scopedHeadings: section.headings };
+      }
+    }
+  }
+
+  function walk(node: CombinedNode) {
+    if (node.type === 'heading') {
+      const level = node.attrs?.level ?? 1;
+      const title = getTextContent(node);
+      closeSectionsAtOrAbove(level);
+      if (title) {
+        for (const section of stack) section.headings.push({ title, level });
+      }
+      stack.push({ level, headings: [], tocNodes: [] });
+    } else if (node.type === 'toc' && stack.length > 0) {
+      stack[stack.length - 1].tocNodes.push(node);
+    }
+
+    (node.content ?? []).forEach(walk);
+  }
+
+  walk(doc);
+  closeSectionsAtOrAbove(-Infinity);
 }

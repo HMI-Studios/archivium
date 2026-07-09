@@ -60,21 +60,24 @@ const ToC = Node.create<ToCOptions>({
     return [{ tag: 'div#toc' }]
   },
 
-  renderHTML({ HTMLAttributes }) {
-    if (this.options.context) {
-      return [
-        'div',
-        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-        ['h3', {}, 'Table of Contents'],
-        generateToCDOM(this.options.context.headings),
-      ];
-    } else {
-      return [
-        'div',
-        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-        ['h3', {}, 'Table of Contents'],
-      ];
+  addAttributes() {
+    return {
+      scopedHeadings: {
+        default: null,
+        rendered: false,
+      },
     }
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const headings = node.attrs.scopedHeadings ?? this.options.context?.headings;
+
+    return [
+      'div',
+      mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
+      ['h3', {}, 'Table of Contents'],
+      ...(headings ? [generateToCDOM(headings)] : []),
+    ];
   },
 
   addCommands() {
