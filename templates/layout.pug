@@ -64,7 +64,9 @@ html(lang='en')
   body
     header
       nav.navbar.mb-0
-        ul.navbarBtns.shrink-1.scroll-x
+        button#navHamburgerBtn.navbar-hamburger(type='button' aria-label=T('Menu') aria-expanded='false' aria-controls='mainNavList')
+          span.material-symbols-outlined menu
+        ul#mainNavList.navbarBtns.shrink-1.scroll-x
           li.navbarBtn
             a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/`) #{T('Home')}
           li.navbarBtn
@@ -140,6 +142,21 @@ html(lang='en')
               if curTemplate !== 'signup'
                 li.navbarBtn
                   a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/signup${curTemplate === 'login' ? '' : `?${encodedPath}`}`) #{T('Create Account')}
+      .nav-overlay.hidden#navOverlay
+      script.
+        function setNavOpen(open) {
+          document.querySelector('#mainNavList').classList.toggle('nav-open', open);
+          document.querySelector('#navHamburgerBtn').setAttribute('aria-expanded', String(open));
+          document.querySelector('#navOverlay').classList.toggle('hidden', !open);
+        }
+        document.querySelector('#navHamburgerBtn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          setNavOpen(!document.querySelector('#mainNavList').classList.contains('nav-open'));
+        });
+        document.querySelector('#navOverlay').addEventListener('click', () => setNavOpen(false));
+        document.querySelector('#mainNavList').addEventListener('click', (e) => {
+          if (e.target.closest('a')) setNavOpen(false);
+        });
 
     #modal-anchor
 
