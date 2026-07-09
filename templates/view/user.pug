@@ -112,7 +112,7 @@ block content
             td(data-sort=item.title)
               a.link.link-animated(href=`${universeLink(item.universe_short)}/items/${item.shortname}`) #{item.title}
               if !item.last_updated_by
-                small(style='font-size: x-small;') #{T('(New)')}
+                small.text-x-small #{T('(New)')}
             td(data-sort=item.universe)
               a.link.link-animated(href=`${universeLink(item.universe_short)}/`) #{item.universe}
             td(data-sort=item.updated_at) #{formatDate(item.updated_at, true)}

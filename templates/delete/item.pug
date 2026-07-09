@@ -44,10 +44,10 @@ block content
     div.inputGroup
       label(for='title') #{T('Item shortname')}: 
       input(id='shortname' type='text' name='shortname')
-    
+
     .d-flex.align-center.gap-2
       button.color-error(onclick='deleteItem()') #{T('Delete Item')}
       a.link.link-animated(href=`${universeLink(item.universe_short)}/items/${item.shortname}`) #{T('Go Back')}
 
     div
-      span#error(style={ color: 'red', 'font-size': 'small' })
+      span#error.text-small.color-error

@@ -21,7 +21,7 @@ block content
       button(type='submit') #{T('Login')}
     if error
       div
-        span(style={'font-size': 'small'}).color-error #{T(error)}
+        span.text-small.color-error #{T(error)}
   p
     a.link.link-animated(href=`${ADDR_PREFIX}/forgot-password`) #{T('Forgot password?')}
   p

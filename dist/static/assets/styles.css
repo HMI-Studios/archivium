@@ -247,10 +247,17 @@ header {
 }
 .button.large {
   padding: 0.875rem 1rem;
-  font-size: large;
+  font-size: 1.125rem;
 }
 .button:disabled {
   cursor: default;
+}
+
+.text-x-small {
+  font-size: 0.75;
+}
+.text-small {
+  font-size: 0.875rem;
 }
 
 .pfp {
@@ -1002,7 +1009,7 @@ h4, h5 {
 .tiptap .collaboration-carets__label {
   border-radius: 3px 3px 3px 0;
   color: #0d0d0d;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-style: normal;
   font-weight: 600;
   left: -1px;
