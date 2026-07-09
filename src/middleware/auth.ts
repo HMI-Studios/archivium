@@ -5,13 +5,17 @@ import logger from '../logger';
 import { ResultSetHeader } from 'mysql2/promise';
 import { Session } from '../api/models/session';
 
+const SESSION_LIFETIME_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const SESSION_REFRESH_THRESHOLD_MS = 1000 * 60 * 60 * 24; // 1 day
+
 const createSession = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   let staleSession: Session | null = null;
 
   if (req.cookies['archiviumuid']) {
     const session = await api.session.getOne({ hash: req.cookies['archiviumuid'] });
     if (session) {
-      if (new Date().getTime() - session.created_at.getTime() < 1000 * 60 * 60 * 24 * 7) {
+      const sessionAge = new Date().getTime() - session.created_at.getTime();
+      if (sessionAge < SESSION_LIFETIME_MS) {
         req.session = {
           id: session.id,
           hash: session.hash,
@@ -23,6 +27,19 @@ const createSession = async (req: Request, res: Response, next: NextFunction): P
             user_id: session.user_id,
             user: session.user,
           }
+        }
+
+        res.cookie('archiviumuid', session.hash, {
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+          maxAge: SESSION_LIFETIME_MS,
+        });
+
+
+        // Session is old enough that we should refresh it
+        if (sessionAge > SESSION_REFRESH_THRESHOLD_MS) {
+          await api.session.refresh(session.id);
         }
         return next();
       } else {
@@ -38,7 +55,7 @@ const createSession = async (req: Request, res: Response, next: NextFunction): P
     httpOnly: true,
     secure: true,
     sameSite: 'lax',
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    maxAge: SESSION_LIFETIME_MS,
   });
   req.session = {
     id: session.id,
