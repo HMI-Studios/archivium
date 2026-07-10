@@ -7,18 +7,19 @@ class CalendarSystem {
   timestampToCalendar(timestamp) {
     const elapsed = timestamp + this.def.epoch.timestamp;
     const result = { timestamp, elapsed };
-    
+
     const cycles = this.getSortedCycles();
     let remaining = elapsed;
-    
+
     for (const cycle of cycles) {
       const cycleResult = this.processCycle(cycle, remaining, result);
       result[cycle.id] = cycleResult.count;
+      result[`${cycle.id}_index`] = cycleResult.count;
       remaining = cycleResult.remaining;
-      
+
       if (cycle.subdivisions) {
         const subdivResult = this.processSubdivisions(
-          cycle.subdivisions, 
+          cycle.subdivisions,
           cycleResult.remaining,
           result,
           cycle.id
@@ -29,21 +30,39 @@ class CalendarSystem {
     }
 
     if (elapsed < 0) result[cycles[0].id] -= 1;
-    
+
+    if (this.def.independent_cycles) {
+      for (const ic of this.def.independent_cycles) {
+        result[ic.id] = this.processIndependentCycle(ic, elapsed);
+      }
+    }
+
     return result;
+  }
+
+  processIndependentCycle(cycle, elapsed) {
+    const unitCount = Math.floor(elapsed / cycle.duration_ticks);
+    const position = ((unitCount % cycle.period) + cycle.period) % cycle.period;
+    return cycle.names ? cycle.names[position] : position;
+  }
+
+  getOverride(source, index) {
+    if (!source || !source.exceptions || index === undefined) return undefined;
+    return source.exceptions[index];
   }
 
   calendarToTimestamp(calendarData) {
     let timestamp = -this.def.epoch.timestamp;
     const cycles = this.getSortedCycles();
-    
+
     for (const cycle of cycles) {
       const count = calendarData[cycle.id] || 0;
-      
+
       if (cycle.duration_fn) {
         if (count >= 0) {
           for (let i = 0; i < count; i++) {
-            const duration = this.evaluateDurationFn(cycle.duration_fn, {
+            const override = this.getOverride(cycle, i);
+            const duration = override !== undefined ? override : this.evaluateDurationFn(cycle.duration_fn, {
               ...calendarData,
               [`${cycle.id}_index`]: i
             });
@@ -51,7 +70,8 @@ class CalendarSystem {
           }
         } else {
           for (let i = -1; i >= count; i--) {
-            const duration = this.evaluateDurationFn(cycle.duration_fn, {
+            const override = this.getOverride(cycle, i);
+            const duration = override !== undefined ? override : this.evaluateDurationFn(cycle.duration_fn, {
               ...calendarData,
               [`${cycle.id}_index`]: i
             });
@@ -61,39 +81,39 @@ class CalendarSystem {
       } else if (cycle.duration_ticks) {
         timestamp += count * cycle.duration_ticks;
       }
-      
+
       if (cycle.subdivisions) {
         timestamp += this.calculateSubdivisionTime(
           cycle.subdivisions,
-          calendarData,
+          { ...calendarData, [`${cycle.id}_index`]: count },
           cycle.id
         );
       }
     }
-    
+
     return timestamp;
   }
 
   calculateSubdivisionTime(subdivisions, calendarData, parentId) {
     let elapsed = 0;
-    
+
     for (const subdiv of subdivisions) {
       if (subdiv.type === 'uniform') {
         const count = calendarData[subdiv.id] || 0;
         elapsed += count * subdiv.duration_ticks;
       } else if (subdiv.type === 'named_sequence') {
         const subdivisionIndex = calendarData[`${parentId}_subdivision_index`];
-        
+
         if (subdivisionIndex !== undefined) {
           for (let i = 0; i < subdivisionIndex; i++) {
             const unit = subdiv.units[i];
-            const duration = this.resolveDuration(unit, calendarData);
+            const duration = this.resolveDuration(unit, calendarData, parentId);
             elapsed += duration;
           }
         }
       }
     }
-    
+
     return elapsed;
   }
 
@@ -102,7 +122,7 @@ class CalendarSystem {
       return this.countVariableCycles(cycle, remaining, context);
     } else {
       const duration = cycle.duration_ticks;
-      
+
       let count, remainder;
       if (remaining >= 0) {
         count = Math.floor(remaining / duration);
@@ -110,13 +130,13 @@ class CalendarSystem {
       } else {
         count = Math.floor(remaining / duration);
         remainder = remaining - (count * duration);
-        
+
         if (remainder < 0) {
           count -= 1;
           remainder += duration;
         }
       }
-      
+
       return {
         count,
         remaining: remainder
@@ -127,38 +147,40 @@ class CalendarSystem {
   countVariableCycles(cycle, remaining, context) {
     let count = 0;
     let accumulated = 0;
-    
+
     if (remaining >= 0) {
       while (true) {
-        const duration = this.evaluateDurationFn(cycle.duration_fn, {
+        const override = this.getOverride(cycle, count);
+        const duration = override !== undefined ? override : this.evaluateDurationFn(cycle.duration_fn, {
           ...context,
           [`${cycle.id}_index`]: count
         });
-        
+
         if (accumulated + duration > remaining) {
           break;
         }
-        
+
         accumulated += duration;
         count++;
       }
     } else {
       while (true) {
         count--;
-        const duration = this.evaluateDurationFn(cycle.duration_fn, {
+        const override = this.getOverride(cycle, count);
+        const duration = override !== undefined ? override : this.evaluateDurationFn(cycle.duration_fn, {
           ...context,
           [`${cycle.id}_index`]: count
         });
-        
+
         if (accumulated - duration < remaining) {
           count++;
           break;
         }
-        
+
         accumulated -= duration;
       }
     }
-    
+
     return {
       count,
       remaining: remaining - accumulated
@@ -168,11 +190,11 @@ class CalendarSystem {
   processSubdivisions(subdivisions, remaining, context, parentId) {
     const data = {};
     let currentRemaining = remaining;
-    
+
     for (const subdiv of subdivisions) {
       if (subdiv.type === 'uniform') {
         const duration = subdiv.duration_ticks;
-        
+
         let count, remainder;
         if (currentRemaining >= 0) {
           count = Math.floor(currentRemaining / duration);
@@ -180,34 +202,34 @@ class CalendarSystem {
         } else {
           count = Math.floor(currentRemaining / duration);
           remainder = currentRemaining - (count * duration);
-          
+
           if (remainder < 0) {
             count -= 1;
             remainder += duration;
           }
         }
-        
+
         data[subdiv.id] = count;
         currentRemaining = remainder;
       } else if (subdiv.type === 'named_sequence') {
-        const result = this.processNamedSequence(subdiv.units, currentRemaining, context);
+        const result = this.processNamedSequence(subdiv.units, currentRemaining, context, parentId);
         data[`${parentId}_subdivision`] = result.name;
         data[`${parentId}_subdivision_index`] = result.index;
         currentRemaining = result.remaining;
       }
     }
-    
+
     return { data, remaining: currentRemaining };
   }
 
-  processNamedSequence(units, remaining, context) {
+  processNamedSequence(units, remaining, context, parentId) {
     if (remaining >= 0) {
       let accumulated = 0;
-      
+
       for (let i = 0; i < units.length; i++) {
         const unit = units[i];
-        const duration = this.resolveDuration(unit, context);
-        
+        const duration = this.resolveDuration(unit, context, parentId);
+
         if (accumulated + duration > remaining) {
           return {
             name: unit.name,
@@ -215,10 +237,10 @@ class CalendarSystem {
             remaining: remaining - accumulated
           };
         }
-        
+
         accumulated += duration;
       }
-      
+
       return {
         name: units[units.length - 1].name,
         index: units.length - 1,
@@ -226,13 +248,13 @@ class CalendarSystem {
       };
     } else {
       let accumulated = 0;
-      
+
       for (let i = units.length - 1; i >= 0; i--) {
         const unit = units[i];
-        const duration = this.resolveDuration(unit, context);
-        
+        const duration = this.resolveDuration(unit, context, parentId);
+
         accumulated -= duration;
-        
+
         if (accumulated <= remaining) {
           return {
             name: unit.name,
@@ -241,7 +263,7 @@ class CalendarSystem {
           };
         }
       }
-      
+
       return {
         name: units[0].name,
         index: 0,
@@ -250,7 +272,11 @@ class CalendarSystem {
     }
   }
 
-  resolveDuration(unit, context) {
+  resolveDuration(unit, context, parentId) {
+    const override = this.getOverride(unit, context[`${parentId}_index`]);
+    if (override !== undefined) {
+      return override;
+    }
     if (unit.duration_ticks !== undefined) {
       return unit.duration_ticks;
     }
@@ -264,21 +290,21 @@ class CalendarSystem {
     if (typeof durationFn === 'object' && durationFn.type === 'expression') {
       return this.evaluateExpression(durationFn, context);
     }
-    
+
     if (durationFn.type === 'conditional') {
       const variable = context[durationFn.variable] || 0;
-      
+
       for (const condition of durationFn.conditions) {
         if (condition.default) {
           return condition.duration_ticks;
         }
-        
+
         if (this.evaluateCondition(condition.if, variable, context)) {
           return condition.duration_ticks;
         }
       }
     }
-    
+
     return 0;
   }
 
@@ -287,24 +313,24 @@ class CalendarSystem {
       const args = this.resolveArguments(condition.args, value, context);
       return this.callFunction(this.functions[condition.function], args, context);
     }
-    
+
     if (condition.type === 'modulo') {
       const val = this.resolveValue(condition.value, value, context);
       return (val % condition.divisor) === condition.equals;
     }
-    
+
     if (condition.type === 'and') {
       return condition.conditions.every(c => this.evaluateCondition(c, value, context));
     }
-    
+
     if (condition.type === 'or') {
       return condition.conditions.some(c => this.evaluateCondition(c, value, context));
     }
-    
+
     if (condition.type === 'not') {
       return !this.evaluateCondition(condition.condition, value, context);
     }
-    
+
     return false;
   }
 
@@ -313,13 +339,13 @@ class CalendarSystem {
       const conditionResult = this.evaluateCondition(expr.condition, 0, context);
       return conditionResult ? expr.true_value : expr.false_value;
     }
-    
+
     return 0;
   }
 
   resolveArguments(args, defaultValue, context) {
     if (!args || args.length === 0) return [defaultValue];
-    
+
     return args.map(arg => this.resolveValue(arg, defaultValue, context));
   }
 
@@ -327,53 +353,53 @@ class CalendarSystem {
     if (typeof value === 'number') {
       return value;
     }
-    
+
     if (typeof value === 'object') {
       if (value.type === 'variable') {
         return context[value.name] !== undefined ? context[value.name] : defaultValue;
       }
-      
+
       if (value.type === 'add') {
         const left = this.resolveValue(value.left, defaultValue, context);
         const right = this.resolveValue(value.right, defaultValue, context);
         return left + right;
       }
-      
+
       if (value.type === 'subtract') {
         const left = this.resolveValue(value.left, defaultValue, context);
         const right = this.resolveValue(value.right, defaultValue, context);
         return left - right;
       }
     }
-    
+
     return defaultValue;
   }
 
   callFunction(functionDef, args, context) {
     if (functionDef.type === 'leap_year') {
       const year = args[0];
-      
+
       // Apply all rules in order
       for (const rule of functionDef.rules) {
         const val = this.resolveValue(rule.value, year, { ...context, year });
-        
+
         if (rule.condition.type === 'modulo') {
           if ((val % rule.condition.divisor) === rule.condition.equals) {
             return rule.result;
           }
         }
       }
-      
+
       return false;
     }
-    
+
     if (functionDef.type === 'cycle_position') {
       const value = args[0];
       const cycleLength = functionDef.cycle_length;
       const position = ((value % cycleLength) + cycleLength) % cycleLength;
       return functionDef.positions.includes(position);
     }
-    
+
     return false;
   }
 
@@ -403,10 +429,10 @@ class CalendarSystem {
       const hour = calendarData.hour || 0;
       const minute = calendarData.minute || 0;
       const second = calendarData.second || 0;
-      
+
       return `${year}-${month}-${day} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
     }
-    
+
     return JSON.stringify(calendarData, null, 2);
   }
 }
