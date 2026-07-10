@@ -150,6 +150,7 @@ export default function(app: Express) {
 
   /* Misc pages */
   get('/search', sites.ALL, [], pages.misc.search);
+  get('/calendar-lab', sites.ALL, [], pages.misc.calendarLab);
   get('/news', sites.ALL, [], async (req, res) => {
     req.params.universeShortname = 'archivium';
     req.query.type = 'newsletter';

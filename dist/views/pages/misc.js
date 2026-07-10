@@ -90,5 +90,9 @@ exports.default = {
             data.universe = await api_1.default.universe.getOne(req.session.user, { shortname: universeShort });
         }
         res.prepareRender('editor', data);
+    },
+    /* Custom calendar engine sandbox - standalone, not linked from the nav */
+    async calendarLab(_, res) {
+        res.prepareRender('calendarLab');
     }
 };

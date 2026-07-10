@@ -121,6 +121,7 @@ const templates = {
     forgotPassword: compile('templates/edit/forgotPassword.pug'),
     resetPassword: compile('templates/edit/resetPassword.pug'),
     editor: compile('templates/editor.pug'),
+    calendarLab: compile('templates/calendarLab.pug'),
 };
 async function render(req, template, context = {}) {
     if (template in templates)

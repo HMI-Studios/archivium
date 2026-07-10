@@ -6,10 +6,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default {
   mode: process.env.NODE_ENV || 'development',
-  entry: './src/main.tsx',
+  entry: {
+    bundle: './src/main.tsx',
+    calendarLab: './src/calendarLabMain.tsx',
+  },
   output: {
     path: path.resolve(__dirname, '../dist/static/editor'),
-    filename: 'bundle.js',
+    filename: '[name].js',
     clean: true, // Clean old builds
     publicPath: '/', // Adjust if using nested routes
   },
