@@ -919,6 +919,7 @@ button:disabled, .button-link:disabled {
 .markdown p {
   /* text-indent: 2rem; */
   padding: 0 0.75rem;
+  margin: 0 0 0.5rem;
   min-height: 2rem;
 }
 .markdown li p {
@@ -940,8 +941,6 @@ button:disabled, .button-link:disabled {
   margin: 0.5rem;
   border: 0.05625rem solid silver;
   border-radius: 1rem;
-  display: flex;
-  flex-direction: column;
   background-color: var(--sheet-color);
 }
 
@@ -964,9 +963,33 @@ button:disabled, .button-link:disabled {
 .markdown aside>.iframe-wrapper:not(:last-child) {
     margin-bottom: 0.25rem;
 }
-
-.markdown aside :is(h1, h2, h3, h4, h5, h6) {
-  padding-left: 0.25rem;
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  padding: 0 0.5rem;
+  margin: 0.75rem 0 0.5rem;
+}
+.markdown :is(h1, h2, h3, h4, h5, h6):first-child {
+  margin-top: 0;
+}
+.markdown h1 {
+  font-size: 2.5rem;
+  margin-top: 1rem;
+}
+.markdown h2 {
+  font-size: 2.125rem;
+  margin-top: 1rem;
+}
+.markdown h3 {
+  font-size: 1.875rem;
+  margin-top: 0.875rem;
+}
+.markdown h4 {
+  font-size: 1.625rem;
+}
+.markdown h5 {
+  font-size: 1.375rem;
+}
+.markdown h6 {
+  font-size: 1.1875rem;
 }
 
 .markdown ul {
@@ -1011,9 +1034,6 @@ button:disabled, .button-link:disabled {
   display: none; /* Hide empty trailing paragraph */
 }
 
-h4, h5 {
-  margin-bottom: 0.25rem;
-}
 
 /* Tiptap Editor styles */
 .tiptap-editor {
@@ -1023,7 +1043,7 @@ h4, h5 {
 .tiptap {
   background-color: var(--sheet-color);
   border-radius: 0 0 0.25rem 0.25rem;
-  padding: 0.25rem 1.25rem;
+  padding: 1rem 1.25rem 0.25rem;
 }
 
 .tiptap-navbar {
