@@ -96,6 +96,7 @@ const templates = {
     upgradeUniverse: compile('templates/edit/universeUpgrade.pug'),
     privateUniverse: compile('templates/view/privateUniverse.pug'),
     universeAdmin: compile('templates/edit/universeAdmin.pug'),
+    universeStats: compile('templates/edit/universeStats.pug'),
     universeThread: compile('templates/view/universeThread.pug'),
     createUniverseThread: compile('templates/create/universeThread.pug'),
     story: compile('templates/view/story.pug'),

@@ -817,6 +817,76 @@ class ItemAPI {
         const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
         return await this._getLinks(item);
     }
+    async getUniverseLinkStats(universe) {
+        const edges = await (0, utils_1.executeQuery)(`
+      SELECT DISTINCT src.shortname AS \`from\`, target.shortname AS \`to\`
+      FROM itemlink il
+      INNER JOIN item src ON il.from_item = src.id
+      INNER JOIN item target ON target.universe_id = src.universe_id AND target.shortname = il.to_item_short
+      WHERE src.universe_id = ? AND il.to_universe_short = ?
+    `, [universe.id, universe.shortname]);
+        const deadLinks = await (0, utils_1.executeQuery)(`
+      SELECT il.to_universe_short, il.to_item_short, COUNT(DISTINCT il.from_item) AS count
+      FROM itemlink il
+      INNER JOIN item src ON il.from_item = src.id
+      LEFT JOIN universe tu ON tu.shortname = il.to_universe_short
+      LEFT JOIN item target ON target.universe_id = tu.id AND target.shortname = il.to_item_short
+      WHERE src.universe_id = ? AND target.id IS NULL
+      GROUP BY il.to_universe_short, il.to_item_short
+      ORDER BY count DESC
+    `, [universe.id]);
+        return { edges, deadLinks };
+    }
+    async getUniverseTabData(universe) {
+        const queries = {
+            gallery: `
+        SELECT DISTINCT ii.item_id FROM itemimage AS ii
+        INNER JOIN item AS i ON i.id = ii.item_id
+        WHERE i.universe_id = ?
+      `,
+            lineage: `
+        SELECT DISTINCT l.parent_id AS item_id FROM lineage AS l
+        INNER JOIN item AS i ON i.id = l.parent_id
+        WHERE i.universe_id = ?
+        UNION
+        SELECT DISTINCT l.child_id AS item_id FROM lineage AS l
+        INNER JOIN item AS i ON i.id = l.child_id
+        WHERE i.universe_id = ?
+      `,
+            timeline: `
+        SELECT DISTINCT ie.item_id FROM itemevent AS ie
+        INNER JOIN item AS i ON i.id = ie.item_id
+        WHERE i.universe_id = ?
+        UNION
+        SELECT DISTINCT ti.timeline_id AS item_id FROM timelineitem AS ti
+        INNER JOIN item AS i ON i.id = ti.timeline_id
+        WHERE i.universe_id = ?
+      `,
+            map: `
+        SELECT DISTINCT m.item_id FROM map AS m
+        INNER JOIN item AS i ON i.id = m.item_id
+        WHERE i.universe_id = ?
+      `,
+            notes: `
+        SELECT DISTINCT inote.item_id FROM itemnote AS inote
+        INNER JOIN item AS i ON i.id = inote.item_id
+        INNER JOIN note AS n ON n.id = inote.note_id
+        WHERE i.universe_id = ? AND n.is_public
+      `,
+            comments: `
+        SELECT DISTINCT c.item_id FROM itemcomment AS c
+        INNER JOIN item AS i ON i.id = c.item_id
+        WHERE i.universe_id = ?
+      `,
+        };
+        const result = {};
+        for (const tabType in queries) {
+            const params = queries[tabType].includes('UNION') ? [universe.id, universe.id] : [universe.id];
+            const rows = await (0, utils_1.executeQuery)(queries[tabType], params);
+            result[tabType] = new Set(rows.map(row => row.item_id));
+        }
+        return result;
+    }
     async handleLinks(item, objData, conn) {
         if (objData.body && typeof objData.body !== 'string') {
             const links = [];

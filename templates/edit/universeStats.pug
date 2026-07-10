@@ -1,0 +1,217 @@
+extends ../layout.pug
+
+block title
+  title #{T('Stats')} — #{T('Archivium')}
+
+block breadcrumbs
+  if displayUniverse
+    a.link.link-animated(href=`${ADDR_PREFIX}/`) #{universe.title}
+  else
+    a.link.link-animated(href=`${ADDR_PREFIX}/`) #{T('Home')}
+    |  / 
+    a.link.link-animated(href=`${ADDR_PREFIX}/universes`) #{T('Universes')}
+    |  / 
+    a.link.link-animated(href=`${ADDR_PREFIX}/universes/${universe.shortname}`) #{universe.title}
+  |  / 
+  span #{T('Stats')}
+
+block styles
+  style.
+    .tab-cell {
+      text-align: center;
+      padding: 0.25rem 0.5rem;
+    }
+    .tab-cell.has-tab {
+      background-color: rgba(76, 175, 80, 0.25);
+    }
+    .tab-cell.hidden-tab {
+      background-color: rgba(255, 193, 7, 0.3);
+    }
+    .tab-cell.no-tab {
+      background-color: rgba(128, 128, 128, 0.1);
+      color: var(--text-color-muted, gray);
+    }
+    #link-graph {
+      width: 100%;
+      height: 500px;
+      border: 1px solid var(--border-color, #8888);
+      border-radius: 0.5rem;
+    }
+
+    .alert-cell {
+      background-color: #ee220099;
+    }
+
+block scripts
+  script(src='https://unpkg.com/force-graph')
+  script
+    include /static/scripts/tabs.js
+    include /static/scripts/table.js
+
+block content
+  .d-flex.justify-between.align-baseline
+    h2 #{universe.title} #{T('Stats')}
+    a.link.link-animated(href=`${ADDR_PREFIX}/universes/${universe.shortname}`) #{T('Go back')}
+
+  ul#tabBtns.navbarBtns.gap-1.mb-2.scroll-x
+    li.navbarBtn(data-tab='links')
+      h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('links')`) #{T('Links')}
+    li.navbarBtn(data-tab='words')
+      h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('words')`) #{T('Word Counts')}
+    li.navbarBtn(data-tab='tabs')
+      h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('tabs')`) #{T('Tabs')}
+
+  .tabs
+    .itemTab.hidden.flex-col(data-tab='links')
+      h2 #{T('Link Graph')}
+      if edges.length
+        p #[b #{T('Total links')}:] #{edges.length}
+        small #{T('Click a node to visit that item. Isolated items with no links are not shown.')}
+        #link-graph
+      else
+        p #{T('No item-to-item links found in this universe yet.')}
+
+      br
+
+      .d-flex.flex-wrap.gap-4
+        .grow-1
+          h2 #{T('Dead Links')}
+          if deadLinks.length
+            table.sheet.w-100
+              thead
+                tr
+                  th #{T('Target')}
+                  th #{T('Linkers')}
+              tbody
+                each deadLink in deadLinks
+                  tr
+                    td
+                      a.link.link-animated.link-broken(href=`${universeLink(deadLink.to_universe_short)}/items/create?shortname=${deadLink.to_item_short}`)
+                        if deadLink.to_universe_short === universe.shortname
+                          | @#{deadLink.to_item_short}
+                        else
+                          | @#{deadLink.to_universe_short}/#{deadLink.to_item_short}
+                    td.center #{deadLink.count}
+          else
+            p #{T('No dead links found.')}
+
+        .grow-1
+          h2 #{T('Link Counts')}
+          table.sheet.w-100
+            thead
+              tr
+                th.sortable #{T('Item')}
+                th.sortable.sort-numeric #{T('Links From')}
+                th.sortable.sort-numeric #{T('Links To')}
+            tbody
+              each item in linkCounts
+                tr
+                  td(class={ 'alert-cell': item.from === 0 && item.to === 0 } data-sort=item.title)
+                    a.link.link-animated(href=`${universeLink(universe.shortname)}/items/${item.shortname}`) #{item.title}
+                  td.center(class={ 'alert-cell': item.from === 0 } data-sort=item.from) #{item.from}
+                  td.center(class={ 'alert-cell': item.to === 0 } data-sort=item.to) #{item.to}
+
+    .itemTab.hidden.flex-col(data-tab='words')
+      h2 #{T('Word Counts')}
+      p #[b #{T('Total words')}:] #{totalWords}
+      table.sheet
+        thead
+          tr
+            th.sortable #{T('Item')}
+            th.sortable #{T('Type')}
+            th.sortable.sort-numeric #{T('Word Count')}
+        tbody
+          each item in wordCounts
+            tr
+              td(data-sort=item.title)
+                a.link.link-animated(href=`${universeLink(universe.shortname)}/items/${item.shortname}`) #{item.title}
+              td(data-sort=item.typeName style={ 'background-color': `color-mix(in oklab, ${item.typeColor}, transparent)` })
+                | #{capitalize(T(item.typeName))}
+              td.center(data-sort=item.words) #{item.words}
+
+    .itemTab.hidden.flex-col(data-tab='tabs')
+      h2 #{T('Tab Usage')}
+      .mb-4
+        table
+          tbody
+            tr
+              td.tab-cell.has-tab(style={ padding: '0.125rem 0.5rem' }) ✓
+              td #{T('Tab is visible')}
+            tr
+              td.tab-cell.hidden-tab(style={ padding: '0.125rem 0.5rem' }) !
+              td #{T('Has data, but the tab is hidden')}
+            tr
+              td.tab-cell.no-tab(style={ padding: '0.125rem 0.5rem' }) —
+              td #{T('No data')}
+      .scroll-x.w-100
+        table.sheet.w-100
+          thead
+            tr
+              th #{T('Item')}
+              each tabType in tabTypes
+                th.cente.sortable #{capitalize(T(tabType))}
+          tbody
+            each item in tabPresence
+              tr
+                td
+                  a.link.link-animated(href=`${ADDR_PREFIX}/universes/${universe.shortname}/items/${item.shortname}`) #{item.title}
+                each tabType in tabTypes
+                  - const state = item.tabs[tabType];
+                  td.tab-cell(data-sort=state class=(state === 'active' ? 'has-tab' : (state === 'hidden' ? 'hidden-tab' : 'no-tab')))
+                    if state === 'active'
+                      | ✓
+                    else if state === 'hidden'
+                      | !
+                    else
+                      | —
+
+  script.
+    tabLoadPromise.then(() => {
+      const edges = !{JSON.stringify(edges)};
+      if (!edges.length) return;
+
+      const titles = !{JSON.stringify(nodeTitles)};
+
+      const nodeIds = {};
+      edges.forEach((edge) => {
+        nodeIds[edge.from] = true;
+        nodeIds[edge.to] = true;
+      });
+      const nodes = Object.keys(nodeIds).map((id) => ({ id, title: titles[id] || id }));
+      const links = edges.map((edge) => ({ source: edge.from, target: edge.to }));
+
+      const elem = document.getElementById('link-graph');
+      const textColor = getComputedStyle(document.body).color || 'black';
+      const nodeRadius = 4;
+      ForceGraph()(elem)
+        .graphData({ nodes, links })
+        .nodeId('id')
+        .nodeLabel('title')
+        .nodeAutoColorBy('id')
+        .nodeCanvasObject((node, ctx, globalScale) => {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, nodeRadius, 0, 2 * Math.PI, false);
+          ctx.fillStyle = node.color;
+          ctx.fill();
+
+          const fontSize = 12 / globalScale;
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = textColor;
+          ctx.fillText(node.title, node.x, node.y + nodeRadius + 2);
+        })
+        .nodePointerAreaPaint((node, color, ctx) => {
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, nodeRadius + 2, 0, 2 * Math.PI, false);
+          ctx.fill();
+        })
+        .linkDirectionalArrowLength(6)
+        .linkDirectionalArrowRelPos(1)
+        .onNodeClick((node) => {
+          window.location.href = `#{ADDR_PREFIX}/universes/#{universe.shortname}/items/${node.id}`;
+        })
+        .width(elem.clientWidth)
+        .height(elem.clientHeight);
+    });
