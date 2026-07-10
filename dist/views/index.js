@@ -174,6 +174,7 @@ function default_1(app) {
     get('/reset-password/:key', sites.ALL, [], (_, res) => res.prepareRender('resetPassword'));
     /* Misc pages */
     get('/search', sites.ALL, [], pages_1.default.misc.search);
+    get('/calendar-lab', sites.ALL, [], pages_1.default.misc.calendarLab);
     get('/news', sites.ALL, [], async (req, res) => {
         req.params.universeShortname = 'archivium';
         req.query.type = 'newsletter';

@@ -128,6 +128,7 @@ const templates = {
   resetPassword: compile('templates/edit/resetPassword.pug'),
 
   editor: compile('templates/editor.pug'),
+  calendarLab: compile('templates/calendarLab.pug'),
 };
 
 export async function render(req: Request, template, context = {}) {
