@@ -270,6 +270,19 @@ class CalendarSystem {
             const val = this.resolveValue(condition.value, value, context);
             return (val % condition.divisor) === condition.equals;
         }
+        if (condition.type === 'compare') {
+            const left = this.resolveValue(condition.left, value, context);
+            const right = this.resolveValue(condition.right, value, context);
+            switch (condition.operator) {
+                case '>': return left > right;
+                case '<': return left < right;
+                case '>=': return left >= right;
+                case '<=': return left <= right;
+                case '==': return left === right;
+                case '!=': return left !== right;
+                default: return false;
+            }
+        }
         if (condition.type === 'and') {
             return condition.conditions.every(c => this.evaluateCondition(c, value, context));
         }
@@ -533,3 +546,196 @@ console.log("\n=== Decimal Calendar (Pure JSON) ===");
 const decimal = new CalendarSystem(decimalCalendar);
 const decimalNow = decimal.timestampToCalendar(now);
 console.log("Current time in Decimal calendar:", decimalNow);
+// Thessian Calendar: showcases independent cycles, exceptions, and comparison conditions.
+//
+// Lore: the Thessian empire kept a 360-day year (4 seasons of 90 days) until its
+// calendar reform in year 1000, after which the year was extended to 365 days.
+// Every 5th year is a leap year, adding 5 more days regardless of era. All of the
+// extra days (from leap years and/or the reform) land in Frostmoon, the first season.
+// In year 1452, "The Long Winter" added an extra 25 days to Frostmoon by decree -
+// an irregular, one-off exception that doesn't fit any formula.
+// Independently of all that, a 6-day Thessian week ticks on regardless of season/year.
+const isLeapYear = {
+    type: "function_call",
+    function: "is_leap_year",
+    args: [{ type: "variable", name: "year_index" }]
+};
+const isReformEra = {
+    type: "compare",
+    operator: ">=",
+    left: { type: "variable", name: "year_index" },
+    right: 1000
+};
+const thessianCalendar = {
+    name: "Thessian Calendar",
+    epoch: {
+        timestamp: 0,
+    },
+    functions: {
+        is_leap_year: {
+            type: "leap_year",
+            rules: [
+                { condition: { type: "modulo", divisor: 5, equals: 0 }, value: { type: "variable", name: "year_index" }, result: true },
+            ]
+        }
+    },
+    cycles: [
+        {
+            id: "year",
+            estimated_duration_ticks: 315360000,
+            duration_fn: {
+                type: "conditional",
+                variable: "year_index",
+                conditions: [
+                    { if: { type: "and", conditions: [isLeapYear, isReformEra] }, duration_ticks: 319680000 }, // 370 days
+                    { if: { type: "and", conditions: [isLeapYear, { type: "not", condition: isReformEra }] }, duration_ticks: 315360000 }, // 365 days
+                    { if: { type: "and", conditions: [{ type: "not", condition: isLeapYear }, isReformEra] }, duration_ticks: 315360000 }, // 365 days
+                    { default: true, duration_ticks: 311040000 } // 360 days
+                ]
+            },
+            subdivisions: [
+                {
+                    type: "named_sequence",
+                    units: [
+                        {
+                            name: "Frostmoon",
+                            duration_fn: {
+                                type: "conditional",
+                                variable: "year_index",
+                                conditions: [
+                                    { if: { type: "and", conditions: [isLeapYear, isReformEra] }, duration_ticks: 86400000 }, // 100 days
+                                    { if: { type: "and", conditions: [isLeapYear, { type: "not", condition: isReformEra }] }, duration_ticks: 82080000 }, // 95 days
+                                    { if: { type: "and", conditions: [{ type: "not", condition: isLeapYear }, isReformEra] }, duration_ticks: 82080000 }, // 95 days
+                                    { default: true, duration_ticks: 77760000 } // 90 days
+                                ]
+                            },
+                            exceptions: { 1452: 103680000 } // The Long Winter of 1452: 120 days instead of the usual 95
+                        },
+                        { name: "Bloomtide", duration_ticks: 77760000 }, // 90 days
+                        { name: "Suncrest", duration_ticks: 77760000 }, // 90 days
+                        { name: "Harvestwane", duration_ticks: 77760000 }, // 90 days
+                    ]
+                }
+            ]
+        },
+        {
+            id: "day",
+            duration_ticks: 864000
+        },
+    ],
+    independent_cycles: [
+        {
+            id: "weekday",
+            duration_ticks: 864000,
+            period: 6,
+            names: ["Emberday", "Stoneday", "Windday", "Tideday", "Duskday", "Starday"]
+        }
+    ]
+};
+// Note: the year cycle's exception must stay consistent with the sum of its
+// subdivisions' exceptions (here, both add exactly 25 extra days to 1452) - the
+// cycle's total duration and its subdivisions' total must always agree, or dates
+// near the boundary between affected and unaffected years will be miscomputed.
+thessianCalendar.cycles[0].exceptions = { 1452: 336960000 }; // 390 days (365 + 25 from the Long Winter)
+console.log("\n=== Thessian Calendar (independent cycles, exceptions, comparisons) ===");
+function assertEqual(actual, expected, message) {
+    if (actual !== expected) {
+        throw new Error(`FAIL: ${message} (expected ${expected}, got ${actual})`);
+    }
+    console.log(`PASS: ${message}`);
+}
+const thessian = new CalendarSystem(thessianCalendar);
+function tsFor(days) {
+    // days is ticks-from-epoch expressed in whole days (1 day = 864000 ticks)
+    return days * 864000;
+}
+// Compute cumulative offsets programmatically instead of by hand, to avoid arithmetic mistakes,
+// then verify the library reproduces the same structure and round-trips exactly.
+function formulaYearLength(yearIndex) {
+    const leap = yearIndex % 5 === 0;
+    const reform = yearIndex >= 1000;
+    if (leap && reform)
+        return 370;
+    if (leap && !reform)
+        return 365;
+    if (!leap && reform)
+        return 365;
+    return 360;
+}
+function yearLength(yearIndex) {
+    const exceptionTicks = thessianCalendar.cycles[0].exceptions[yearIndex];
+    return exceptionTicks !== undefined ? exceptionTicks / 864000 : formulaYearLength(yearIndex);
+}
+function cumulativeDaysBeforeYear(yearIndex) {
+    let total = 0;
+    if (yearIndex >= 0) {
+        for (let y = 0; y < yearIndex; y++)
+            total += yearLength(y);
+    }
+    else {
+        for (let y = -1; y >= yearIndex; y--)
+            total -= yearLength(y);
+    }
+    return total;
+}
+// Year 3 (pre-reform, non-leap: 3 % 5 !== 0): first day of Bloomtide is day 90 of the year.
+{
+    const dayInYear = 90; // 0-indexed day-of-year where Bloomtide begins
+    const ts = tsFor(cumulativeDaysBeforeYear(3) + dayInYear);
+    const cal = thessian.timestampToCalendar(ts);
+    assertEqual(cal.year, 3, "year 3, start of Bloomtide: year");
+    assertEqual(cal.year_subdivision, "Bloomtide", "year 3, start of Bloomtide: season");
+    assertEqual(thessian.calendarToTimestamp(cal), ts, "year 3, start of Bloomtide: round-trip");
+}
+// Year 5 (pre-reform, leap: 5 % 5 === 0): Frostmoon is 95 days, so day 94 is still Frostmoon, day 95 is Bloomtide.
+{
+    const tsLastFrostmoonDay = tsFor(cumulativeDaysBeforeYear(5) + 94);
+    const calLast = thessian.timestampToCalendar(tsLastFrostmoonDay);
+    assertEqual(calLast.year_subdivision, "Frostmoon", "year 5 (leap), day 94: still Frostmoon");
+    const tsFirstBloomtideDay = tsFor(cumulativeDaysBeforeYear(5) + 95);
+    const calFirst = thessian.timestampToCalendar(tsFirstBloomtideDay);
+    assertEqual(calFirst.year_subdivision, "Bloomtide", "year 5 (leap), day 95: Bloomtide begins");
+    assertEqual(thessian.calendarToTimestamp(calFirst), tsFirstBloomtideDay, "year 5 (leap), day 95: round-trip");
+}
+// Year 1000 (post-reform, non-leap: 1000 % 5 === 0 -> actually leap; use 1001 for non-leap post-reform)
+{
+    assertEqual(yearLength(1001), 365, "sanity: year 1001 is a non-leap, post-reform year");
+    const ts = tsFor(cumulativeDaysBeforeYear(1001) + 94);
+    const cal = thessian.timestampToCalendar(ts);
+    assertEqual(cal.year, 1001, "year 1001, day 94: year");
+    assertEqual(cal.year_subdivision, "Frostmoon", "year 1001, day 94: still in reformed (95-day) Frostmoon");
+    assertEqual(thessian.calendarToTimestamp(cal), ts, "year 1001, day 94: round-trip");
+}
+// Year 1452: The Long Winter exception. Frostmoon is 120 days (not the formula's 95), and the
+// year itself is 390 days (not the formula's 365) - both driven by exceptions, not duration_fn.
+{
+    assertEqual(formulaYearLength(1452), 365, "sanity: year 1452 would be 365 days by formula alone");
+    const tsDay110 = tsFor(cumulativeDaysBeforeYear(1452) + 110);
+    const calDay110 = thessian.timestampToCalendar(tsDay110);
+    assertEqual(calDay110.year_subdivision, "Frostmoon", "Long Winter (1452), day 110: still Frostmoon thanks to the exception");
+    assertEqual(thessian.calendarToTimestamp(calDay110), tsDay110, "Long Winter (1452), day 110: round-trip");
+    const tsDay120 = tsFor(cumulativeDaysBeforeYear(1452) + 120);
+    const calDay120 = thessian.timestampToCalendar(tsDay120);
+    assertEqual(calDay120.year_subdivision, "Bloomtide", "Long Winter (1452), day 120: Frostmoon's exception ends, Bloomtide begins");
+    assertEqual(thessian.calendarToTimestamp(calDay120), tsDay120, "Long Winter (1452), day 120: round-trip");
+    // Year 1453 must start exactly where the extended year 1452 leaves off - proving the
+    // cycle-level exception (390 days) and unit-level exception (Frostmoon +25 days) agree.
+    const tsStartOf1453 = tsFor(cumulativeDaysBeforeYear(1453));
+    const cal1453 = thessian.timestampToCalendar(tsStartOf1453);
+    assertEqual(cal1453.year, 1453, "year after the Long Winter: year rolls over cleanly");
+    assertEqual(cal1453.year_subdivision, "Frostmoon", "year after the Long Winter: starts fresh in Frostmoon");
+    assertEqual(thessian.calendarToTimestamp(cal1453), tsStartOf1453, "year after the Long Winter: round-trip");
+}
+// Independent weekday cycle: ticks continuously regardless of season/year boundaries.
+{
+    const tsA = tsFor(cumulativeDaysBeforeYear(1452) + 110);
+    const tsB = tsA + 6 * 864000; // exactly one full 6-day week later
+    const calA = thessian.timestampToCalendar(tsA);
+    const calB = thessian.timestampToCalendar(tsB);
+    assertEqual(calA.weekday, calB.weekday, "weekday cycle: repeats every 6 days regardless of season boundaries");
+    const names = thessianCalendar.independent_cycles[0].names;
+    const idxA = names.indexOf(calA.weekday);
+    const calNext = thessian.timestampToCalendar(tsA + 864000);
+    assertEqual(calNext.weekday, names[(idxA + 1) % 6], "weekday cycle: advances by one name per day");
+}
+console.log("\nAll Thessian calendar assertions passed.");
