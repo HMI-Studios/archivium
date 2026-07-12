@@ -215,7 +215,7 @@ class MapImageAPI {
     const { originalname, buffer, mimetype } = file;
     const { width, height } = sizeOf(buffer);
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
-    const map = (await executeQuery('SELECT id FROM map WHERE item_id'))[0] as { id: number } | undefined;
+    const map = (await executeQuery('SELECT id FROM map WHERE item_id = ?', [item.id]))[0] as { id: number } | undefined;
     if (!map) throw new NotFoundError();
     const existingImage = await this.getOneByItem(item).catch(handleAsNull(NotFoundError));
 
@@ -227,7 +227,7 @@ class MapImageAPI {
       );
 
       await conn.execute('UPDATE map SET image_id = ?, width = ?, height = ? WHERE id = ?', [data.insertId, width, height, map.id]);
-      
+
       if (existingImage) {
         await conn.execute(`DELETE FROM image WHERE id = ?`, [existingImage.id]);
       }
@@ -301,7 +301,7 @@ class ItemImageAPI {
         `INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`,
         [originalname.substring(0, 64), mimetype, buffer],
       );
-      
+
       await conn.execute<ResultSetHeader>(
         `INSERT INTO itemimage (item_id, image_id, label, idx) VALUES (?, ?, ?, ?)`,
         [item.id, data.insertId, '', 0],

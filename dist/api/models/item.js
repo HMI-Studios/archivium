@@ -94,7 +94,7 @@ class MapImageAPI {
         const { originalname, buffer, mimetype } = file;
         const { width, height } = (0, buffer_image_size_1.default)(buffer);
         const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
-        const map = (await (0, utils_1.executeQuery)('SELECT id FROM map WHERE item_id'))[0];
+        const map = (await (0, utils_1.executeQuery)('SELECT id FROM map WHERE item_id = ?', [item.id]))[0];
         if (!map)
             throw new errors_1.NotFoundError();
         const existingImage = await this.getOneByItem(item).catch((0, utils_1.handleAsNull)(errors_1.NotFoundError));
