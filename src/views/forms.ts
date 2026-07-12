@@ -53,7 +53,11 @@ export default {
     try {
       const id = await api.universe.put(req.session.user, req.params.universeShortname, req.body);
       const universe = await api.universe.getOne(req.session.user, { 'universe.id': id }, perms.READ);
-      res.redirect(`${universeLink(req, universe.shortname)}`);
+      if (req.body.next) {
+        res.redirect(req.body.next);
+      } else {
+        res.redirect(`${universeLink(req, universe.shortname)}`);
+      }
     } catch (err) {
       if (err instanceof ModelError) {
         res.error = err.message;
@@ -138,7 +142,7 @@ export default {
       title: body.note_title,
       is_public: body.note_public === 'on',
       body: body.note_body,
-      items: body.items,
+      items: (body.items ?? []).map(({ item, universe }) => ([null, item, null, universe])),
       boards: body.boards,
       tags: body.note_tags?.split(' ') ?? [],
     });

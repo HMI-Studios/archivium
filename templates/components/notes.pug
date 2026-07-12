@@ -1,131 +1,111 @@
 block append styles
   style.
-    #note-list .card>.body {
+    #note-list .card>.preview-body {
       white-space: nowrap;
       overflow: hidden;
       mask-image: linear-gradient(135deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0) 97%);
     }
 
-    #notes-left-btn.hidden {
-      display: inline !important;
-      visibility: hidden;
-    }
-
-.notes
+div
   p.ma-0.pa-1
-    a.link.link-animated#notes-left-btn #{T('Create Note')}
+    a.link.link-animated#create-note #{T('Create Note')}
 
-  div
-    #note-control-tabs.hidden
-      ul.navbarBtns.gap-2
-        li.edit.navbarBtn.grow-1
-          b.navbarBtnLink.navbarText.ma-0.pa-1 #{T('Edit')}
-        li.preview.navbarBtn.grow-1
-          b.navbarBtnLink.navbarText.ma-0.pa-1 #{T('Preview')}
-
-  div
-    #note-list.card-list
-      input(id='search' name='search' placeholder='Search...')
-      each note in notes
-        .sheet.card.d-flex.flex-col.gap-1(data-uuid=note.uuid data-note=note)
+  #note-list.card-list
+    input(id='search' name='search' placeholder='Search...')
+    each note in notes
+      .sheet.card.d-flex.flex-col.gap-1(data-uuid=note.uuid data-note=note)
+        .d-flex.align-start.justify-between
           h2.ma-0 #{note.title}
-          small
-            b #{T('Author')}: 
-            a.link.link-animated(href=`/users/${noteAuthors[note.author_id].username}`) #{noteAuthors[note.author_id].username}
-            |  — 
-            b #{T('Updated')}: 
-            | #{formatDate(note.updated_at)}
-          small.body
-          if note.tags
-            small.d-flex.flex-wrap.gap-1.tags
-              each noteTag in note.tags
-                if noteTag
-                  a.link.link-animated(data-tag=noteTag) ##{noteTag}
-    #note-edit.hidden
-      textarea
-    #note-display.sheet.hidden
-      h1.title
-      hr
-      .body
-    #note-loading.sheet.d-flex.justify-center.hidden
-      .loader
-
-  div
-    #note-controls.sheet(style={ position: 'sticky', top: '4rem' })
-      form.edit.hidden(method='POST')
-        .grid.align-baseline.gap-2(style={ 'grid-template-columns': 'auto auto' })
-          label(for='note_title') #{T('Title')}:
-          input(id='note_title' type='text' name='note_title')
-
-          label(for='note_public') #{T('Public')}:
-          label.switch
-            input(id='note_public' name='note_public' type='checkbox')
-            span.slider
-        
-        label #{T('Linked items')}:
-        ul#note-items-edit.ma-0.pa-0
-        #note-items
-
-        //- label Pinned boards:
-        //- ul#note-boards-edit.ma-0.pa-0
-        //- #note-boards
-
-        label(for='note_tags') #{T('Tags')}: 
-        textarea(id='note_tags' name='note_tags')
-        
-        input.hidden(id='create' type='submit' value='Create' formaction=`${ADDR_PREFIX}/notes/create`)
-        input.hidden(id='save' type='submit' value='Save' formaction=`${ADDR_PREFIX}/notes/edit`)
-        input.hidden(id='delete' type='button' value='Delete')
-        
-        input(id='note_body' type='hidden' name='note_body')
-        input(id='note_uuid' type='hidden' name='note_uuid')
-        input(id='note_universe' type='hidden' name='note_universe' value=(universe && universe.shortname))
-        input(id='note_item' type='hidden' name='note_item' value=(item && item.shortname))
-        input(id='note_board' type='hidden' name='note_board' value=(board && board.shortname))
-      
-      .preview.hidden
-        h3 #{T('Linked items')}:
-        ul#note-items-list.ma-0
-        #note-items
-
-        p.tags
-
-        //- h3 Pinned boards:
-        //- ul#note-boards-list.ma-0
-        //- #note-boards
-
+          a.edit-link.link.link-animated.d-flex.align-center
+            span.material-symbols-outlined(style={ 'font-size': '1rem' }) edit
+            |  #{T('Edit')}
+        small
+          b #{T('Author')}: 
+          a.link.link-animated(href=`/users/${noteAuthors[note.author_id].username}`) #{noteAuthors[note.author_id].username}
+          |  — 
+          b #{T('Updated')}: 
+          | #{formatDate(note.updated_at)}
+        span.preview-body
+        .rendered-body.hidden
+          .d-flex.justify-center.pa-4
+            .loader
+        if note.items
+          small.item-links #{T('Linked to')}: 
+            -
+              const itemLinks = note.items.map(row => [row[0], `${universeLink(row[3])}/items/${row[1]}`]);
+            +linkList(itemLinks)
+        if note.tags
+          small.d-flex.flex-wrap.gap-1.tags
+            each noteTag in note.tags
+              if noteTag
+                a.link.link-animated(data-tag=noteTag) ##{noteTag}
 
   script.
     (async function() {
       if (!window.createElement) throw 'domUtils not loaded!';
       if (!window.getJSON) throw 'fetchUtils.js not loaded!';
-      if (!window.setupEasyMDE) throw 'easyMDE.js not loaded!';
-      if (!window.parseMarkdown) throw 'markdown/parse.js not loaded!';
-      if (!window.loadMarkdown) throw 'markdown/render.js not loaded!';
-      if (!window.createSearchableSelect) throw 'searchableSelect not loaded!';
 
-      let noteState = 'list';
-      const leftBtn = document.querySelector('#notes-left-btn');
+      const newNoteLink = document.querySelector('#create-note');
+      newNoteLink.addEventListener('click', async () => {
+        const uuid = await postJSON('#{noteBaseRoute}', {
+          title: '',
+          is_public: false,
+        });
+
+        const linkQuery = new URLSearchParams();
+        linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+        window.location.href = `/notes/${uuid}?${linkQuery.toString()}`;
+      });
+
       const noteList = document.querySelector('#note-list');
       const searchBar = noteList.querySelector('#search');
-      const noteEdit = document.querySelector('#note-edit');
-      const noteDisplay = document.querySelector('#note-display');
-      const noteLoading = document.querySelector('#note-loading');
 
-      const noteControls = document.querySelector('#note-controls');
-      const editForm = noteControls.querySelector('.edit');
-      const previewPanel = noteControls.querySelector('.preview');
-      const noteItems = document.querySelector('#note-items');
-      //- const noteBoards = document.querySelector('#note-boards');
-      const noteItemsList = document.querySelector('.edit #note-items-edit');
-      //- const noteBoardsList = document.querySelector('.edit #note-boards-edit');
-      const noteItemsPreviewList = document.querySelector('.preview #note-items-list');
-      //- const noteBoardsPreviewList = document.querySelector('.preview #note-boards-list');
-      const itemsAndBoards = {};
+      const fetchedNotes = {};
+      let currentOpenUuid = null;
+      async function toggleNote(uuid) {
+        if (currentOpenUuid) {
+          const noteCard = noteList.querySelector(`.card[data-uuid="${currentOpenUuid}"]`);
+          const preview = noteCard.querySelector('.preview-body');
+          const rendered = noteCard.querySelector('.rendered-body');
+          preview.classList.remove('hidden');
+          rendered.classList.add('hidden');
+        }
 
-      const controlTabs = document.querySelector('#note-control-tabs');
-      const editTab = controlTabs.querySelector('.edit');
-      const previewTab = controlTabs.querySelector('.preview');
+        const query = new URLSearchParams(window.location.search);
+        if (currentOpenUuid === uuid) {
+          currentOpenUuid = null;
+          query.delete('note');
+          const { protocol, host, pathname, hash } = window.location;
+          const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
+          window.history.replaceState(null, '', newurl);
+          return;
+        };
+        currentOpenUuid = uuid;
+
+        query.set('note', uuid);
+        const { protocol, host, pathname, hash } = window.location;
+        const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
+        window.history.replaceState(null, '', newurl);
+
+        noteList.querySelectorAll('.card').forEach((el) => {
+          const editLink = el.querySelector('.edit-link');
+          const linkQuery = new URLSearchParams();
+          linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+          editLink.href = `/notes/${el.dataset.uuid}?${linkQuery.toString()}`;
+        });
+
+        const noteCard = noteList.querySelector(`.card[data-uuid="${uuid}"]`);
+        const preview = noteCard.querySelector('.preview-body');
+        const rendered = noteCard.querySelector('.rendered-body');
+        preview.scrollIntoViewIfNeeded({ block: 'center' });
+        preview.classList.add('hidden');
+        rendered.classList.remove('hidden');
+        if (uuid in fetchedNotes) return;
+        const noteData = await (await fetch(`#{noteBaseRoute}/${uuid}?renderBody=1`)).json();
+        const bodyHTML = noteData.body.content;
+        rendered.innerHTML = bodyHTML;
+        fetchedNotes[uuid] = true;
+      }
 
       const noteCards = noteList.querySelectorAll('.card');
       const noteTags = {};
@@ -162,212 +142,6 @@ block append styles
         });
       });
 
-      const previewTitle = noteDisplay.querySelector('.title');
-      async function updateTitle(title) {
-        previewTitle.textContent = title;
-      }
-      const previewTags = previewPanel.querySelector('.tags');
-      async function updateTags(tags) {
-        previewTags.textContent = tags.split(' ').filter(t => !!t).map(t => `#${t}`).join(' ');
-      }
-      const displayNodes = await loadMarkdown(noteDisplay.querySelector('.body'), '#{universe && universe.shortname}', '', null);
-      async function updateDisplay(markdown) {
-        const data = await parseMarkdown(markdown).evaluate('#{universe && universe.shortname}', null);
-        displayNodes.update(data);
-        displayNodes.render();
-      }
-      editForm.note_title.addEventListener('change', () => {
-        updateTitle(editForm.note_title.value);
-      });
-      editForm.note_tags.addEventListener('change', () => {
-        updateTags(editForm.note_tags.value);
-      });
-      const easyMDE = setupEasyMDE('#note-edit textarea', { universe, context: { item }});
-      easyMDE.codemirror.on('change', () => {
-        updateDisplay(easyMDE.value());
-        editForm.note_body.value = easyMDE.value();
-      });
-      let editorNeedsRefresh = false;
-
-
-      function showNoteEditControls() {
-        noteList.classList.add('hidden');
-        controlTabs.classList.remove('hidden');
-        leftBtn.innerText = 'Back to List';
-      }
-
-      function editNote() {
-        noteLoading.classList.add('hidden');
-        controlTabs.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
-        editTab.classList.add('selected');
-        noteDisplay.classList.add('hidden');
-        noteEdit.classList.remove('hidden');
-        editForm.classList.remove('hidden');
-        previewPanel.classList.add('hidden');
-        if (editorNeedsRefresh) easyMDE.codemirror.refresh();
-      }
-
-      function previewNote() {
-        noteLoading.classList.add('hidden');
-        controlTabs.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
-        previewTab.classList.add('selected');
-        noteDisplay.classList.remove('hidden');
-        noteEdit.classList.add('hidden');
-        editForm.classList.add('hidden');
-        previewPanel.classList.remove('hidden');
-      }
-
-      function loadingNote() {
-        noteLoading.classList.remove('hidden');
-        controlTabs.classList.add('hidden');
-        noteDisplay.classList.add('hidden');
-        noteEdit.classList.add('hidden');
-        editForm.classList.add('hidden');
-        previewPanel.classList.add('hidden');
-      }
-
-      async function openNote(uuid) {
-        noteState = 'loading';
-        leftBtn.classList.add('hidden');
-        showNoteEditControls();
-        noteEdit.classList.remove('hidden');
-        editForm.create.classList.add('hidden');
-        editForm.save.classList.remove('hidden');
-        editForm.delete.classList.remove('hidden');
-        editForm.note_uuid.value = uuid;
-
-        const query = new URLSearchParams(window.location.search);
-        query.set('note', uuid);
-        const { protocol, host, pathname, hash } = window.location;
-        const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
-        window.history.pushState({ path: newurl }, '', newurl);
-
-        //- const noteCard = noteList.querySelector(`[data-uuid="${uuid}"]`);
-        //- const { title, public, body, author_id } = noteCard && JSON.parse(noteCard.dataset.note);
-        loadingNote();
-        const [, note] = await getJSON(`#{noteBaseRoute}/${uuid}`);
-        console.log(note)
-        if (!note) {
-          leftBtn.classList.remove('hidden');
-          backToList();
-          return;
-        }
-        const { title, public, body, author_id, items, boards } = note;
-        easyMDE.value(body);
-        editorNeedsRefresh = true;
-        editForm.note_title.value = title;
-        editForm.note_public.checked = public;
-        editForm.note_tags.value = (note.tags || []).join(' ');
-        if (!itemsAndBoards.items) {
-          const [, items] = await getJSON(`#{ADDR_PREFIX}/api/writable-items`);
-          itemsAndBoards.items = {};
-          itemsAndBoards.itemOptions = {};
-          itemsAndBoards.itemGroups = {};
-          for (const item of items) {
-            const key = `${item.universe_short}/${item.shortname}`;
-            itemsAndBoards.items[key] = item;
-            itemsAndBoards.itemOptions[key] = item.title;
-            itemsAndBoards.itemGroups[key] = item.universe;
-          }
-          noteItems.innerHTML = '';
-          noteItems.appendChild(createSearchableSelect(
-            'note-items-select',
-            itemsAndBoards.itemOptions,
-            (value) => {
-              const item = itemsAndBoards.items[value];
-              addLinkedItem(item.shortname, item.title, item.universe_short, item.universe);
-            },
-            itemsAndBoards.itemGroups,
-          ));
-        }
-        for (const [item, itemShort, uni, uniShort] of items) {
-          addLinkedItem(itemShort, item, uniShort, uni);
-        }
-        updateTitle(title);
-        updateTags(editForm.note_tags.value);
-        if (#{contextUser ? `author_id === ${contextUser.id}` : 'false'}) controlTabs.classList.remove('hidden');
-        noteState = 'edit';
-        leftBtn.classList.remove('hidden');
-
-        previewNote();
-      }
-
-      let linkedItemCounter = 0;
-      function addLinkedItem(shortname, title, universe_short, universe) {
-        const exists = noteItemsList.querySelectorAll(`li[data-item=${shortname}]`).length > 0;
-        if (exists) return;
-        const i = linkedItemCounter++;
-        noteItemsList.appendChild(createElement('li', { classList: ['d-flex', 'align-center'], dataset: {item: shortname}, children: [
-          createElement('a', { attrs: {
-            innerText: 'delete',
-            onclick: () => noteItemsList.querySelector(`li[data-item=${shortname}]`).remove(),
-          }, classList: ['material-symbols-outlined', 'link'] }),
-          createElement('span', { attrs: { innerText: title } }),
-          createElement('input', { attrs: { type: 'hidden', name: `items[${i}][item]`, value: shortname } }),
-          createElement('input', { attrs: { type: 'hidden', name: `items[${i}][universe]`, value: universe_short } }),
-        ] }));
-        noteItemsPreviewList.appendChild(createElement('li', { classList: ['d-flex', 'align-center'], dataset: {item: shortname}, children: [
-          createElement('a', { attrs: {
-            innerText: title,
-            href: `${universeLink(universe_short)}/items/${shortname}`,
-          }, classList: ['link', 'link-animated'] }),
-        ] }));
-      }
-
-      function createNote() {
-        noteState = 'new';
-        showNoteEditControls();
-        editNote();
-        editForm.create.classList.remove('hidden');
-        editForm.save.classList.add('hidden');
-        editForm.delete.classList.add('hidden');
-
-        editForm.note_title.value = '';
-        editForm.note_public.checked = false;
-        easyMDE.value('');
-        updateTitle('');
-        updateTags('');
-      }
-
-      async function deleteNote() {
-        if (!confirm('Are you sure you want to delete this note? This cannot be undone!')) return;
-        await deleteJSON(`/api/users/#{contextUser ? contextUser.username : ''}/notes/${editForm.note_uuid.value}`);
-        window.location.reload();
-      }
-
-      function backToList() {
-        if (noteState === 'new' || noteState === 'edit-unsaved') {
-          if (!confirm('You have unsaved changes! Are you sure you want to go back?')) return;
-        }
-
-        noteState = 'list';
-        noteLoading.classList.add('hidden');
-        noteList.classList.remove('hidden');
-        noteEdit.classList.add('hidden');
-        noteDisplay.classList.add('hidden');
-        editForm.classList.add('hidden');
-        previewPanel.classList.add('hidden');
-        controlTabs.classList.add('hidden');
-        editTab.classList.remove('selected');
-        leftBtn.innerText = 'Create Note';
-
-        noteItemsList.innerHTML = '';
-        noteItemsPreviewList.innerHTML = '';
-
-        const query = new URLSearchParams(window.location.search);
-        query.delete('note');
-        const { protocol, host, pathname, hash } = window.location;
-        const newurl = `${protocol}//${host}${pathname}?${query.toString()}${hash}`;
-        window.history.pushState({ path: newurl }, '', newurl);
-      }
-
-
-      leftBtn.addEventListener('click', () => {
-        if (noteState === 'loading') return;
-        else if (noteState === 'list') createNote();
-        else backToList();
-      });
-
       searchBar.addEventListener('change', () => {
         noteList.querySelectorAll('.card').forEach((el) => {
           const { title, body } = JSON.parse(el.dataset.note);
@@ -375,32 +149,43 @@ block append styles
         });
       });
 
-      editTab.addEventListener('click', editNote);
-      previewTab.addEventListener('click', previewNote);
-
       noteList.querySelectorAll('.card').forEach((el) => {
         el.addEventListener('click', () => {
-          openNote(el.dataset.uuid);
+          toggleNote(el.dataset.uuid);
         });
+        const rendered = el.querySelector('.rendered-body');
+        rendered.addEventListener('click', (e) => e.stopPropagation());
+        const editLink = el.querySelector('.edit-link');
+        editLink.addEventListener('click', (e) => e.stopPropagation());
+        const linkQuery = new URLSearchParams();
+        linkQuery.append('returnTo', `${location.pathname}${location.search}${location.hash}`);
+        editLink.href = `/notes/${el.dataset.uuid}?${linkQuery.toString()}`;
       });
 
-      editForm.delete.addEventListener('click', deleteNote);
+      window.addEventListener('load', async () => {
+        const query = new URLSearchParams(window.location.search);
+        const uuid = query.get('note');
+        if (uuid) {
+          await toggleNote(uuid);
+          const hash = location.hash.substr(1);
+          if (hash) {
+            const el = document.getElementById(hash);
+            if (el) {
+              el.scrollIntoView();
+            }
+          }
+        }
+        const tag = query.get('note_tag');
+        if (tag) {
+          filterByTag(tag);
+        }
+      });
 
-      const query = new URLSearchParams(window.location.search);
-      const uuid = query.get('note');
-      if (uuid) {
-        openNote(uuid);
-      }
-      const tag = query.get('note_tag');
-      if (tag) {
-        filterByTag(tag);
-      }
 
-        
       document.querySelectorAll('#note-list .card').forEach(async (el) => {
-        const body = el.querySelector('.body');
-        const text = await renderMdPreview('#{universe && universe.shortname}', JSON.parse(el.dataset.note).body, null);
-        const maxLength = 127;
-        body.innerText = text.length >= maxLength ? `${text.substring(0, maxLength)}...` : text;
+        const previewBody = el.querySelector('.preview-body');
+        const text = JSON.parse(el.dataset.note).body?.replaceAll('\n', ' ') ?? '';
+        const maxLength = 255;
+        previewBody.innerText = text.length >= maxLength ? `${text.substring(0, maxLength)}...` : text;
       });
     })();

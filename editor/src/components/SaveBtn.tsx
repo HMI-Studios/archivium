@@ -7,6 +7,7 @@ export interface SaveBtnProps<T> {
   data: T | null;
   saveUrl: string;
   previewUrl?: string | ((data: unknown) => string);
+  previewText?: string;
   onSave?: (data: T) => void;
 }
 
@@ -22,7 +23,7 @@ window.onbeforeunload = (event) => {
 };
 let saveTimeout: NodeJS.Timeout | null = null;
 
-export default function SaveBtn<T>({ data, saveUrl, previewUrl, onSave }: SaveBtnProps<T>) {
+export default function SaveBtn<T>({ data, saveUrl, previewUrl, previewText, onSave }: SaveBtnProps<T>) {
   const [saveText, setSaveText] = useState<string>('Save Changes');
   const [previousData, setPreviousData] = useState<T | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export default function SaveBtn<T>({ data, saveUrl, previewUrl, onSave }: SaveBt
         });
         const responseData = await response.json();
         if (!response.ok) {
-          setErrorMessage(responseData);
+          if (typeof responseData === 'string') setErrorMessage(responseData);
           throw responseData;
         }
         console.log('SAVED.');
@@ -102,7 +103,7 @@ export default function SaveBtn<T>({ data, saveUrl, previewUrl, onSave }: SaveBt
         } else {
           location.href = previewUrl(data);
         }
-      })}>{T('Preview')}</a>,
+      })}>{previewText ?? T('Preview')}</a>,
       previewBtnAnchor,
     )}
     <button id='save-changes' onClick={() => save(0)}>{T(saveText)}</button>

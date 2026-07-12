@@ -39,9 +39,6 @@ block content
     include /static/scripts/domUtils.js
     include /static/scripts/universes.js
     include /static/scripts/fetchUtils.js
-    include /static/scripts/markdown/parse.js
-    include /static/scripts/markdown/render.js
-    include /static/scripts/easyMDE.js
     include /static/scripts/shortname.js
 
   .d-flex.justify-between.align-baseline
@@ -59,7 +56,7 @@ block content
 
     .inputGroup
       small(style={ 'grid-column': '2 / 4' })
-        i 
+        i
           b #{T('Warning')}: 
           | #{T('changing the shortname will kick out any users currently browsing the universe, ')}
           | #{T('any authors currently editing items will be unable to save their work, ')}
@@ -67,32 +64,32 @@ block content
           | #{T('Make sure you know what you\'re doing!')}
 
     .inputGroup
-      label(for='visibility') #{T('Visibility')}: 
+      label(for='visibility') #{T('Visibility')}:
       select#visibility(name='visibility')
         option(value='public' selected=(universe.is_public)) #{T('Public')}
         option(value='private' selected=(!universe.is_public)) #{T('Private')}
 
     .inputGroup
-      label(for='discussion_enabled') #{T('Discussion')}: 
+      label(for='discussion_enabled') #{T('Discussion')}:
       select#discussion_enabled(name='discussion_enabled')
         option(value='enabled' selected=(universe.discussion_enabled)) #{T('Enabled')}
         option(value='disabled' selected=(!universe.discussion_enabled)) #{T('Disabled')}
 
     .inputGroup
-      label(for='discussion_open') #{T('Who can comment')}: 
+      label(for='discussion_open') #{T('Who can comment')}:
       select#discussion_open(name='discussion_open')
         option(value='enabled' selected=(universe.discussion_open)) #{T('Anyone')}
         option(value='disabled' selected=(!universe.discussion_open)) #{T('Only with COMMENT permissions')}
 
     .inputGroup
-      label #{T('Stories enabled')}: 
+      label #{T('Stories enabled')}:
       label.switch
         input#stories-enabled(type='checkbox' onChange='updateStoriesEnabled()' checked=Boolean(universe.obj_data.storiesEnabled))
         span.slider
 
     if universe.tier >= tiers.PREMIUM
       .inputGroup
-        label #{T('Theme')}: 
+        label #{T('Theme')}:
         select#theme
           option(value=null selected=(!universe.obj_data.theme)) #{T('None')}
           each _, themeKey in themes
@@ -100,21 +97,45 @@ block content
 
       .inputGroup
         small(style={ 'grid-column': '2 / 4' })
-          i 
+          i
             | #{T('Note: selecting a theme from the list above will override the preferences of users visiting your universe.')}
             br
             | #{T('If this is not what you want to do, select "None".')}
 
       #customTheme.hidden.form-row-group
         .inputGroup
-          label #{T('Use "Glass Pane" theme')}: 
+          label #{T('Use "Glass Pane" theme')}:
           label.switch
             input#glass(type='checkbox' checked=Boolean((universe.obj_data.customTheme || {}).glass))
             span.slider
 
         .inputGroup
-          label #{T('Background Image URL')}: 
+          label #{T('Background Image URL')}:
           input#backgroundImage(type='text' value=(universe.obj_data.customTheme || {}).backgroundImage)
+
+    #home-body.inputGroup
+      label #{T('Home Page')}:
+      .d-flex.align-center.gap-2
+        label.switch
+          input(type='checkbox' checked=(universe.obj_data.homePage && homePage !== null))
+          span.slider
+        button(type='submit' name='next' value=(`/editor/universes/${universe.shortname}/items/_home`) class={ hidden: !universe.obj_data.homePage || homePage === null }) #{T('Edit Home Page')}
+
+    .inputGroup
+      small(style={ 'grid-column': '2 / 4' })
+        i #{T('This item will be shown in the "Home" tab of your universe page.')}
+
+    #public-body.inputGroup
+      label #{T('Public Page')}:
+      .d-flex.align-center.gap-2
+        label.switch
+          input(type='checkbox' checked=(universe.obj_data.publicPage && publicPage !== null))
+          span.slider
+        button(type='submit' name='next' value=(`/editor/universes/${universe.shortname}/items/_public`) class={ hidden: !universe.obj_data.homePage || publicPage === null }) #{T('Edit Public Page')}
+
+    .inputGroup
+      small(style={ 'grid-column': '2 / 4' })
+        i #{T('This item will be shown to users that don\'t have access to your universe instead of the "Access Denied" page.')}
 
     div
       input#obj_data(type='hidden' name='obj_data' value='{}')
@@ -156,20 +177,6 @@ block content
       div
         span(style={ color: 'red', 'font-size': 'small' }) #{T(error)}
 
-    #home-body
-      h3 #{T('Home Page')}
-      .mb-2
-        small #{T('This markdown will be shown in the "Home" tab of your universe page.')}
-      textarea
-        | #{universe.obj_data.homeBody || ''}
-
-    #public-body
-      h3 #{T('Public Page')}
-      .mb-2
-        small #{T('This markdown will be shown to users that don\'t have access to your universe instead of the "Access Denied" page.')}
-      textarea
-        | #{universe.obj_data.publicBody || ''}
-
     h3 #{T('Item Types')}
     small
       b #{T('Note:')} 
@@ -208,19 +215,48 @@ block content
     updateObjData(JSON.parse(document.querySelector('#data').dataset.universe).obj_data);
 
     universe = '#{universe.shortname}';
-    window.homeMDE = setupEasyMDE('#home-body textarea', { universe });
-    homeMDE.codemirror.on('change', () => {
-      updateObjData({ homeBody: homeMDE.value() });
-    });
-    window.publicMDE = setupEasyMDE('#public-body textarea', { universe });
-    publicMDE.codemirror.on('change', () => {
-      updateObjData({ publicBody: publicMDE.value() });
-    });
+
+    const homeBodyContainer = document.querySelector('#home-body');
     const publicBodyContainer = document.querySelector('#public-body');
-    publicBodyContainer.classList.toggle('hidden', #{universe.public ? 'true' : 'false'});
     const visibilitySelect = document.querySelector('#visibility');
     visibilitySelect.addEventListener('change', () => {
       publicBodyContainer.classList.toggle('hidden', visibilitySelect.value !== 'private');
+    });
+
+    const homePageSwitch = homeBodyContainer.querySelector('.switch input');
+    const homePageEdit = homeBodyContainer.querySelector('button');
+    let homePageExists = #{homePage !== null};
+    homePageSwitch.addEventListener('change', async () => {
+      if (publicPageSwitch.checked && !publicPageExists) {
+        await postJSON(`/api/universes/${universe}/items`, {
+          skipValidation: true,
+          title: T('Home Page'),
+          shortname: '_home',
+          item_type: '_special',
+          obj_data: {},
+        });
+        homePageExists = true;
+      }
+      homePageEdit.classList.toggle('hidden', !homePageSwitch.checked);
+      updateObjData({ homePage: homePageSwitch.checked });
+    });
+
+    const publicPageSwitch = publicBodyContainer.querySelector('.switch input');
+    const publicPageEdit = publicBodyContainer.querySelector('button');
+    let publicPageExists = #{publicPage !== null};
+    publicPageSwitch.addEventListener('change', async () => {
+      if (publicPageSwitch.checked && !publicPageExists) {
+        await postJSON(`/api/universes/${universe}/items`, {
+          skipValidation: true,
+          title: T('Public Page'),
+          shortname: '_public',
+          item_type: '_special',
+          obj_data: {},
+        });
+        publicPageExists = true;
+      }
+      publicPageEdit.classList.toggle('hidden', !publicPageSwitch.checked);
+      updateObjData({ publicPage: publicPageSwitch.checked });
     });
 
     function toPlural(title) {

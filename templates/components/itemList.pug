@@ -33,13 +33,14 @@
               td(data-sort=item.title)
                 a.link.link-animated(href=itemLink) #{item.title}
               td(data-sort=item.universe)
-                small
-                  a.filter.link.link-animated(
-                    class={ 'link-selected': item.item_type == type }
-                    data-filter-key='type'
-                    data-filter-value=item.item_type
-                    title='Filter by type'
-                  ) #{capitalize(T(item.itemTypeName))}
+                if item.item_type !== '_special'
+                  small
+                    a.filter.link.link-animated(
+                      class={ 'link-selected': item.item_type == type }
+                      data-filter-key='type'
+                      data-filter-value=item.item_type
+                      title='Filter by type'
+                    ) #{capitalize(T(item.itemTypeName))}
               if showUniverse
                 td(data-sort=item.universe)
                   small
@@ -76,13 +77,14 @@
         .d-flex.flex-col.grow-1
           h3.ma-0
             a.link.link-animated(href=itemLink) #{item.title}
-          .d-flex.gap-1
-            a.filter.link.link-animated(
-              class={ 'link-selected': item.item_type == type }
-              data-filter-key='type'
-              data-filter-value=item.item_type
-              title='Filter by type'
-            ) #{capitalize(T(item.itemTypeName))}
+          if item.item_type !== '_special'
+            .d-flex.gap-1
+              a.filter.link.link-animated(
+                class={ 'link-selected': item.item_type == type }
+                data-filter-key='type'
+                data-filter-value=item.item_type
+                title='Filter by type'
+              ) #{capitalize(T(item.itemTypeName))}
           if showUniverse
             .d-flex.gap-1
               a.filter.link.link-animated(

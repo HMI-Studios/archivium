@@ -13,7 +13,7 @@ exports.default = {
     async list(req, res) {
         const search = req.getQueryParam('search');
         const universes = await api_1.default.universe.getMany(req.session.user);
-        const items = await api_1.default.item.getMany(req.session.user, null, Math.max(utils_1.perms.READ, Number(req.query.perms)) || utils_1.perms.READ, {
+        const items = (await api_1.default.item.getMany(req.session.user, null, Math.max(utils_1.perms.READ, Number(req.query.perms)) || utils_1.perms.READ, {
             sort: req.getQueryParam('sort'),
             sortDesc: req.getQueryParam('sort_order') === 'desc',
             limit: req.getQueryParamAsNumber('limit'),
@@ -22,9 +22,8 @@ exports.default = {
             universe: req.getQueryParam('universe'),
             author: req.getQueryParam('author'),
             search,
-        });
+        })).filter(item => !item.shortname.startsWith('_'));
         const universeCats = universes.reduce((cats, universe) => {
-            universe.obj_data = JSON.parse(universe.obj_data);
             return { ...cats, [universe.id]: universe.obj_data['cats'] };
         }, {});
         const universe = req.query.universe ? await api_1.default.universe.getOne(req.session.user, { 'universe.shortname': req.query.universe }) : null;
@@ -63,7 +62,7 @@ exports.default = {
             }
             throw err;
         }
-        item.obj_data = JSON.parse(item.obj_data);
+        ;
         item.itemTypeName = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? ['Missing Category'])[0];
         item.itemTypeColor = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? [, , '#f3f3f3'])[2];
         let renderedBody = { type: 'text', content: '' };
@@ -83,7 +82,7 @@ exports.default = {
             delete user.email;
             commenters[user.id] = user;
         }
-        const [notes, noteUsers] = await api_1.default.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, {}, true);
+        const [notes, noteUsers] = await api_1.default.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true);
         const noteAuthors = {};
         for (const user of noteUsers) {
             user.pfpUrl = (0, utils_1.getPfpUrl)(user);

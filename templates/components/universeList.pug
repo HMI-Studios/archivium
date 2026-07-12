@@ -18,7 +18,7 @@ mixin universeCard(universe)
           b #{T('Updated')}: 
           | #{formatDate(universe.updated_at, true)}
         | —
-        span #{universe.public ? T('Public') : T('Private')}
+        span #{universe.is_public ? T('Public') : T('Private')}
         if contextUser
           | —
           a.follow-btn.link.link-animated(data-following=universe.followers[contextUser.id] ? 'true' : 'false' data-universe-short=universe.shortname)
@@ -35,8 +35,8 @@ mixin universeTableRow(universe)
       small #{formatDate(universe.created_at, true)}
     td(data-sort=universe.updated_at)
       small #{formatDate(universe.updated_at, true)}
-    td(data-sort=universe.public)
-      small #{universe.public ? T('Public') : T('Private')}
+    td(data-sort=universe.is_public)
+      small #{universe.is_public ? T('Public') : T('Private')}
     td(data-sort=universe.followers[contextUser.id])
       small
         a.follow-btn.link.link-animated(data-following=universe.followers[contextUser.id] ? 'true' : 'false' data-universe-short=universe.shortname)

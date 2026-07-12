@@ -9,6 +9,7 @@ import { Note } from './models/note';
 import { User } from './models/user';
 import { NotFoundError } from '../errors';
 import { Session } from './models/session';
+import { tryRenderContent } from '../lib/renderContent';
 
 type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type APIRouteHandler = (req: Request<{ [key: string]: string }>, res: Response) => Promise<any>;
@@ -100,6 +101,16 @@ export default function (app: Express, upload: Multer) {
       ]),
     ]),
     new APIRoute('/is-subscribed', { POST: (req) => api.notification.isSubscribed(req.session.user, req.body) }),
+    new APIRoute('/items', {
+      GET: (req) => api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
+        sort: req.getQueryParam('sort'),
+        sortDesc: req.getQueryParam('sort_order') === 'desc',
+        limit: req.getQueryParamAsNumber('limit'),
+        type: req.getQueryParam('type'),
+        tag: req.getQueryParam('tag'),
+        author: req.getQueryParam('author'),
+      }),
+    }),
     new APIRoute('/users', { GET: () => api.user.getMany() }, [
       new APIRoute('/:username', {
         GET: (req) => api.user.getOne({ 'user.username': req.params.username }),
@@ -111,7 +122,9 @@ export default function (app: Express, upload: Multer) {
           POST: (req) => api.note.post(req.session.user, req.body),
         }, [
           new APIRoute('/:uuid', {
-            GET: (req) => api.note.getOne(req.session.user, req.params.uuid),
+            GET: (req) => api.note.getOne(req.session.user, req.params.uuid)
+              .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
+            PUT: (req) => api.note.put(req.session.user, req.params.uuid, req.body),
             DELETE: (req) => api.note.del(req.session.user, req.params.uuid),
           }),
         ]),
@@ -206,7 +219,9 @@ export default function (app: Express, upload: Multer) {
                 req.params.boardShortname,
                 { 'note.uuid': req.params.uuid },
                 { fullBody: true, connections: true, limit: 1 },
-              ).then((notes: Note[]) => notes[0]),
+              )
+                .then((notes: Note[]) => notes[0])
+                .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
             }),
           ]),
         ]),
@@ -229,11 +244,9 @@ export default function (app: Express, upload: Multer) {
             new APIRoute('/notes', {
               GET: (req) => api.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName),
               POST: async (req) => {
-                const [code, data] = await api.note.post(req.session.user, req.body);
-                if (!data) return [code];
-                const [, uuid] = data;
+                const uuid = await api.note.post(req.session.user, req.body);
                 await api.note.linkToItem(req.session.user, req.params.universeShortName, req.params.itemShortName, uuid);
-                return [code, data];
+                return uuid;
               },
             }, [
               new APIRoute('/:uuid', {
@@ -243,7 +256,9 @@ export default function (app: Express, upload: Multer) {
                   req.params.itemShortName,
                   { 'note.uuid': req.params.uuid },
                   { fullBody: true, connections: true, limit: 1 },
-                ).then((data: [Note[], User[]]) => data[0][0]),
+                )
+                  .then((data: [Note[], User[]?]) => data[0][0])
+                  .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await tryRenderContent(req, note.body, null) } : note),
               }),
             ]),
             new APIRoute('/data', {

@@ -166,10 +166,10 @@ async function main() {
     await postComment(users.testcommenter, chatroomThread, 'Test comment.');
     await postComment(users.testwriter, chatroomThread, '# Markdown test\n- **bold**\n- *italics*\n- etc.');
     console.log('Creating notes...');
-    await createNote(users.testwriter, 'Public Test Note', loremIpsum, true, ['test', 'public']);
-    await createNote(users.testwriter, 'Public Article Note', loremIpsum, true, ['article', 'public'], [testArticle]);
-    await createNote(users.testwriter, 'Private Test Note', loremIpsum, false, ['test', 'private']);
-    await createNote(users.testwriter, 'Private Article Note', loremIpsum, false, ['article', 'private'], [testArticle]);
+    await createNote(users.testwriter, 'Public Test Note', (0, defaults_js_1.unformattedTiptapDocument)(loremIpsum), true, ['test', 'public']);
+    await createNote(users.testwriter, 'Public Article Note', (0, defaults_js_1.unformattedTiptapDocument)(loremIpsum), true, ['article', 'public'], [testArticle]);
+    await createNote(users.testwriter, 'Private Test Note', (0, defaults_js_1.unformattedTiptapDocument)(loremIpsum), false, ['test', 'private']);
+    await createNote(users.testwriter, 'Private Article Note', (0, defaults_js_1.unformattedTiptapDocument)(loremIpsum), false, ['article', 'private'], [testArticle]);
     console.log('Posting newsletters...');
     const archivum = await createUniverse(sysadmin, 'Archivium', 'archivium', true, true, true, { cats: { newsletter: ['newsletter', 'newsletters', '#deddca'] } });
     const newsletter = await createItem(sysadmin, archivum, 'Test Newsletter', 'test-newsletter', 'newsletter', { body: (0, defaults_js_1.unformattedTiptapDocument)(loremIpsum) });

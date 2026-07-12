@@ -1,10 +1,10 @@
-import { API } from "..";
 import crypto from 'crypto';
-import { BaseOptions, executeQuery, parseData, perms } from '../utils';
-import logger from '../../logger';
-import { User } from "./user";
 import { ResultSetHeader } from "mysql2";
-import { ForbiddenError, ModelError, NotFoundError, UnauthorizedError, ValidationError } from "../../errors";
+import { API } from "..";
+import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "../../errors";
+import { IndexedDocument } from "../../lib/tiptapHelpers";
+import { BaseOptions, executeQuery, parseData, perms } from '../utils';
+import { User } from "./user";
 
 export type NoteItemTuple = [string, string, string, string];
 export type NoteBoardTuple = [string, string, string, string];
@@ -26,7 +26,7 @@ export type Note = {
   id: number,
   uuid: string,
   title: string,
-  body: string,
+  body: IndexedDocument | null,
   is_public: boolean
   author_id: number,
   created_at: Date,
@@ -60,10 +60,10 @@ export class NoteAPI {
    * * they own the note,
    * * they have access to a board this note is pinned to, or,
    * * they have access to an item this note is linked to.
-   * @param {*} user 
-   * @param {*} conditions 
-   * @param {*} options 
-   * @returns 
+   * @param {*} user
+   * @param {*} conditions
+   * @param {*} options
+   * @returns
    */
   async getMany(user: User | undefined, conditions, options): Promise<Note[]> {
     const parsedConds = parseData(conditions ?? {});
@@ -87,7 +87,7 @@ export class NoteAPI {
           note.is_public, note.author_id,
           note.created_at, note.updated_at,
           tag.tags,
-          ${options?.fullBody ? 'note.body' : 'SUBSTRING(note.body, 1, 255) AS body'}
+          ${options?.fullBody ? 'note.body' : `SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(note.body, '$.text')), 1, 255) AS body`}
           ${options?.connections ? ', item.items' : ''}
           ${options?.connections ? ', board.boards' : ''}
           ${options?.search ? ', LOCATE(?, note.body) AS match_pos' : ''}
@@ -207,22 +207,27 @@ export class NoteAPI {
     return data;
   }
 
-  async post(user: User | undefined, { title, body, is_public, tags }): Promise<string> {
+  async post(user: User | undefined, { title, body, is_public, tags }: Partial<Note>): Promise<string> {
     if (!user) throw new UnauthorizedError();
     const uuid = crypto.randomUUID();
 
-    const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
-    await executeQuery<ResultSetHeader>(queryString, [uuid, title, body, is_public, user.id, new Date(), new Date()]);
+    if (title === undefined || is_public === undefined) throw new ValidationError('Missing required fields.');
 
-    const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
-    this.putTags(user, uuid, trimmedTags);
+    const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
+    await executeQuery<ResultSetHeader>(queryString, [uuid, title, body ? JSON.stringify(body) : null, is_public, user.id, new Date(), new Date()]);
+
+    if (tags) {
+      const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
+      this.putTags(user, uuid, trimmedTags);
+    }
 
     return uuid;
   }
 
-  async put(user: User | undefined, uuid: string, changes): Promise<ResultSetHeader> {
+  async put(user: User | undefined, uuid: string, changes: Partial<Note>): Promise<ResultSetHeader> {
     if (!user) throw new UnauthorizedError();
     const { title, body, is_public, items, boards, tags } = changes;
+    if (title === undefined || is_public === undefined) throw new ValidationError();
     const note = await this.getOne(user, uuid);
 
     const queryString = `
@@ -233,10 +238,10 @@ export class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-    const data = await executeQuery<ResultSetHeader>(queryString, [title, body, is_public, note.uuid]);
+    const data = await executeQuery<ResultSetHeader>(queryString, [title, body ? JSON.stringify(body) : null, is_public, note.uuid]);
 
     await executeQuery('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
-    for (const { item, universe } of items ?? []) {
+    for (const [, item,, universe] of items ?? []) {
       await this.linkToItem(user, universe, item, uuid);
     }
 
@@ -272,7 +277,7 @@ export class NoteAPI {
   async linkToItem(user: User | undefined, universeShortname: string, itemShortname: string, noteUuid: string): Promise<void> {
     if (!noteUuid) throw new ValidationError('Note UUID is required');
     if (!user) throw new UnauthorizedError();
-    const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true)
+    const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.READ, true)
     const note = await this.getOne(user, noteUuid);
 
     const queryString = `INSERT INTO itemnote (item_id, note_id) VALUES (?, ?)`;

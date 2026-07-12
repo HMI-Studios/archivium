@@ -41,8 +41,9 @@ block breadcrumbs
     |  / 
     a.link.link-animated(href=`${ADDR_PREFIX}/universes/${universe.shortname}`) #{universe.title}
   |  / 
-  a.link.link-animated(href=`${universeItemsLink}?type=${item.item_type}`) #{capitalize(T(`${((universe.obj_data.cats || {})[item.item_type] || [, 'Missing Category'])[1]}`))}
-  |  / 
+  if item.item_type !== '_special'
+    a.link.link-animated(href=`${universeItemsLink}?type=${item.item_type}`) #{capitalize(T(`${((universe.obj_data.cats || {})[item.item_type] || [, 'Missing Category'])[1]}`))}
+    |  / 
   span #{item.title}
 
 block content
@@ -51,9 +52,12 @@ block content
       .card-backdrop(style={ 'background-color': item.itemTypeColor })
       .card-text
         h1.center.ma-0 #{item.title}
-        p.center.ma-0 #{capitalize(T(item.itemTypeName))}
-          if !displayUniverse
-            |  of #{item.universe}
+        if item.item_type !== '_special'
+          p.center.ma-0 #{capitalize(T(item.itemTypeName))}
+            if !displayUniverse
+              |  of #{item.universe}
+        else
+          p.center.ma-0 of #{item.universe}
   p.center.mb-2
     small #{T('Created by ')}
       if item.author
@@ -357,7 +361,7 @@ block content
     div
       -
         const canComment = contextUser && universe.discussion_enabled && (
-          (universe.public && universe.discussion_open)
+          (universe.is_public && universe.discussion_open)
           || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
         );
         const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;
@@ -378,7 +382,9 @@ block content
         const hash = location.hash.substr(1);
         if (hash) {
           const el = document.getElementById(hash);
-          el.scrollIntoView();
+          if (el) {
+            el.scrollIntoView();
+          }
         }
       });
 

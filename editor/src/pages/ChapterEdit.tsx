@@ -8,13 +8,13 @@ import EditorFrame from '../components/EditorFrame';
 import SaveBtn from '../components/SaveBtn';
 import { BulkExistsFetcher, fetchAsync, fetchData, T } from '../helpers';
 
-export type ItemEditProps = {
+export type ChapterEditProps = {
   universeLink: (universe: string) => string,
 };
 
 const itemExistsCache: { [universe: string]: { [item: string]: boolean } } = {};
 
-export default function ChapterEdit({ universeLink }: ItemEditProps) {
+export default function ChapterEdit({ universeLink }: ChapterEditProps) {
   const { storyShort, chapterIndex } = useParams();
 
   if (!storyShort || !chapterIndex) return;

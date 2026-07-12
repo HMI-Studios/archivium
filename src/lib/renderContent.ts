@@ -9,7 +9,7 @@ import logger from '../logger';
 
 
 export type RenderedBody = { type: string, content: any };
-export async function tryRenderContent(req: Request, content: unknown, universeShortname: string): Promise<RenderedBody> {
+export async function tryRenderContent(req: Request, content: unknown, universeShortname: string | null): Promise<RenderedBody> {
   try {
     const links: LinkData[] = [];
     const headings: { title: string, level: number }[] = [];
@@ -23,6 +23,7 @@ export async function tryRenderContent(req: Request, content: unknown, universeS
     await Promise.all(links.map(async (link) => {
       if (link.item) {
         const universeShort = link.universe ?? universeShortname;
+        if (!universeShort) return;
         if (!(universeShort in itemsPerUniverse)) {
           itemsPerUniverse[universeShort] = {};
         }

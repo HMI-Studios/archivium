@@ -9,6 +9,7 @@ const _1 = __importDefault(require("."));
 const logger_1 = __importDefault(require("../logger"));
 const utils_1 = require("./utils");
 const errors_1 = require("../errors");
+const renderContent_1 = require("../lib/renderContent");
 function default_1(app, upload) {
     class APIRoute {
         path;
@@ -95,6 +96,16 @@ function default_1(app, upload) {
             ]),
         ]),
         new APIRoute('/is-subscribed', { POST: (req) => _1.default.notification.isSubscribed(req.session.user, req.body) }),
+        new APIRoute('/items', {
+            GET: (req) => _1.default.item.getMany(req.session.user, null, Math.max(utils_1.perms.READ, Number(req.query.perms)) || utils_1.perms.READ, {
+                sort: req.getQueryParam('sort'),
+                sortDesc: req.getQueryParam('sort_order') === 'desc',
+                limit: req.getQueryParamAsNumber('limit'),
+                type: req.getQueryParam('type'),
+                tag: req.getQueryParam('tag'),
+                author: req.getQueryParam('author'),
+            }),
+        }),
         new APIRoute('/users', { GET: () => _1.default.user.getMany() }, [
             new APIRoute('/:username', {
                 GET: (req) => _1.default.user.getOne({ 'user.username': req.params.username }),
@@ -106,7 +117,9 @@ function default_1(app, upload) {
                     POST: (req) => _1.default.note.post(req.session.user, req.body),
                 }, [
                     new APIRoute('/:uuid', {
-                        GET: (req) => _1.default.note.getOne(req.session.user, req.params.uuid),
+                        GET: (req) => _1.default.note.getOne(req.session.user, req.params.uuid)
+                            .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await (0, renderContent_1.tryRenderContent)(req, note.body, null) } : note),
+                        PUT: (req) => _1.default.note.put(req.session.user, req.params.uuid, req.body),
                         DELETE: (req) => _1.default.note.del(req.session.user, req.params.uuid),
                     }),
                 ]),
@@ -202,7 +215,9 @@ function default_1(app, upload) {
                         POST: (req) => _1.default.note.linkToBoard(req.session.user, req.params.boardShortname, req.body.uuid),
                     }, [
                         new APIRoute('/:uuid', {
-                            GET: (req) => _1.default.note.getByBoardShortname(req.session.user, req.params.boardShortname, { 'note.uuid': req.params.uuid }, { fullBody: true, connections: true, limit: 1 }).then((notes) => notes[0]),
+                            GET: (req) => _1.default.note.getByBoardShortname(req.session.user, req.params.boardShortname, { 'note.uuid': req.params.uuid }, { fullBody: true, connections: true, limit: 1 })
+                                .then((notes) => notes[0])
+                                .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await (0, renderContent_1.tryRenderContent)(req, note.body, null) } : note),
                         }),
                     ]),
                 ]),
@@ -225,16 +240,15 @@ function default_1(app, upload) {
                         new APIRoute('/notes', {
                             GET: (req) => _1.default.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName),
                             POST: async (req) => {
-                                const [code, data] = await _1.default.note.post(req.session.user, req.body);
-                                if (!data)
-                                    return [code];
-                                const [, uuid] = data;
+                                const uuid = await _1.default.note.post(req.session.user, req.body);
                                 await _1.default.note.linkToItem(req.session.user, req.params.universeShortName, req.params.itemShortName, uuid);
-                                return [code, data];
+                                return uuid;
                             },
                         }, [
                             new APIRoute('/:uuid', {
-                                GET: (req) => _1.default.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName, { 'note.uuid': req.params.uuid }, { fullBody: true, connections: true, limit: 1 }).then((data) => data[0][0]),
+                                GET: (req) => _1.default.note.getByItemShortname(req.session.user, req.params.universeShortName, req.params.itemShortName, { 'note.uuid': req.params.uuid }, { fullBody: true, connections: true, limit: 1 })
+                                    .then((data) => data[0][0])
+                                    .then(async (note) => req.getQueryParam('renderBody') === '1' ? { ...note, body: await (0, renderContent_1.tryRenderContent)(req, note.body, null) } : note),
                             }),
                         ]),
                         new APIRoute('/data', {

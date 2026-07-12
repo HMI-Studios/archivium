@@ -101,7 +101,7 @@ CREATE TABLE universe (
   is_public BOOLEAN NOT NULL,
   discussion_enabled BOOLEAN NOT NULL,
   discussion_open BOOLEAN NOT NULL,
-  obj_data TEXT NOT NULL,
+  obj_data JSON NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   PRIMARY KEY (id)
 );
@@ -151,7 +151,7 @@ CREATE TABLE note (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   uuid VARCHAR(36) UNIQUE,
   title VARCHAR(64),
-  body TEXT NOT NULL,
+  body JSON,
   is_public BOOLEAN,
   author_id INT NOT NULL,
   created_at TIMESTAMP NOT NULL,
@@ -228,7 +228,7 @@ CREATE TABLE item (
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL,
   last_updated_by INT,
-  obj_data TEXT NOT NULL,
+  obj_data JSON NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   FOREIGN KEY (universe_id) REFERENCES universe (id) ON DELETE CASCADE,
   FOREIGN KEY (parent_id) REFERENCES item (id),

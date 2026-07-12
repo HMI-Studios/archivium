@@ -393,7 +393,7 @@ export class UserAPI {
 
   /**
    * WARNING: THIS METHOD IS *UNSAFE* AND SHOULD *ONLY* BE CALLED BY AUTHORIZED ROUTES!
-   * @param {number} user_id id of user to delete 
+   * @param {number} user_id id of user to delete
    * @returns {Promise<[number, User?]>}
    */
   async doDeleteUser(userId): Promise<[number, User?]> {
@@ -458,7 +458,7 @@ export class UserAPI {
 
   async getDeleteRequest(user) {
     if (!user) return [401];
-    
+
     const request = (await executeQuery(
       'SELECT * FROM userdeleterequest WHERE user_id = ?',
       [user.id],

@@ -14,7 +14,7 @@ export default {
   async list(req, res) {
     const search = req.getQueryParam('search');
     const universes = await api.universe.getMany(req.session.user);
-    const items = await api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
+    const items = (await api.item.getMany(req.session.user, null, Math.max(perms.READ, Number(req.query.perms)) || perms.READ, {
       sort: req.getQueryParam('sort'),
       sortDesc: req.getQueryParam('sort_order') === 'desc',
       limit: req.getQueryParamAsNumber('limit'),
@@ -23,9 +23,8 @@ export default {
       universe: req.getQueryParam('universe'),
       author: req.getQueryParam('author'),
       search,
-    });
+    })).filter(item => !item.shortname.startsWith('_'));
     const universeCats = universes.reduce((cats, universe) => {
-      universe.obj_data = JSON.parse(universe.obj_data);
       return { ...cats, [universe.id]: universe.obj_data['cats'] };
     }, {});
     const universe = req.query.universe ? await api.universe.getOne(req.session.user, { 'universe.shortname': req.query.universe }) : null;
@@ -66,8 +65,7 @@ export default {
       }
       throw err;
     }
-
-    item.obj_data = JSON.parse(item.obj_data as string) as Record<string, any>;
+;
     item.itemTypeName = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? ['Missing Category'])[0];
     item.itemTypeColor = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? [,,'#f3f3f3'])[2];
 
@@ -91,7 +89,7 @@ export default {
       commenters[user.id] = user;
     }
 
-    const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, {}, true) as [Note[], User[]];
+    const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true) as [Note[], User[]];
     const noteAuthors = {};
     for (const user of noteUsers) {
       user.pfpUrl = getPfpUrl(user);

@@ -8,6 +8,7 @@ const api_1 = __importDefault(require("../../api"));
 const templates_1 = require("../../templates");
 const utils_1 = require("../../api/utils");
 const errors_1 = require("../../errors");
+const renderContent_1 = require("../../lib/renderContent");
 exports.default = {
     async list(req, res) {
         const search = req.query.search;
@@ -41,19 +42,21 @@ exports.default = {
                 .filter(row => row.tier > (universe.tier ?? 0))
             // .some(row => row.universes.length < tierAllowance[user.plan][row.tier])
             ) : false;
-            res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest });
+            const homePage = await api_1.default.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', utils_1.perms.READ, true).catch((0, utils_1.handleAsNull)([errors_1.ForbiddenError, errors_1.UnauthorizedError]));
+            const renderedHomePage = homePage?.obj_data.body ? await (0, renderContent_1.tryRenderContent)(req, homePage?.obj_data.body, universe.shortname) : null;
+            res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: renderedHomePage });
         }
         catch (err) {
             // If the user is not authorized to view the universe, check if there is a public page to display instead
             if (err instanceof errors_1.UnauthorizedError || err instanceof errors_1.ForbiddenError) {
-                const publicBody = await api_1.default.universe.getPublicBodyByShortname(req.params.universeShortname);
-                if (!publicBody && err instanceof errors_1.UnauthorizedError) {
+                const publicPage = await api_1.default.universe.getPublicBodyByShortname(req.params.universeShortname);
+                if (!publicPage && err instanceof errors_1.UnauthorizedError) {
                     res.status(401);
                     req.forceLogin = true;
                     // req.useExQuery = true; // TODO why is this here?
                     return;
                 }
-                return res.prepareRender('privateUniverse', { shortname: req.params.universeShortname, accessRequest, publicBody });
+                return res.prepareRender('privateUniverse', { shortname: req.params.universeShortname, accessRequest, publicPage: await (0, renderContent_1.tryRenderContent)(req, publicPage, req.params.universeShortname) });
             }
             throw err;
         }
@@ -71,9 +74,11 @@ exports.default = {
         }
     },
     async edit(req, res) {
-        const fetchedUniverse = await api_1.default.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, utils_1.perms.WRITE);
+        const fetchedUniverse = await api_1.default.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, utils_1.perms.ADMIN);
         const universe = { ...fetchedUniverse, ...(req.body ?? {}), shortname: fetchedUniverse.shortname, newShort: req.body?.shortname ?? fetchedUniverse.shortname };
-        res.prepareRender('editUniverse', { universe, error: res.error });
+        const homePage = await api_1.default.item.getByUniverseAndItemShortnames(req.session.user, universe.shortname, '_home', utils_1.perms.READ, true).catch((0, utils_1.handleAsNull)(errors_1.ForbiddenError));
+        const publicPage = await api_1.default.item.getByUniverseAndItemShortnames(req.session.user, universe.shortname, '_public', utils_1.perms.READ, true).catch((0, utils_1.handleAsNull)(errors_1.ForbiddenError));
+        res.prepareRender('editUniverse', { universe, error: res.error, homePage, publicPage });
     },
     async createDiscussionThread(req, res) {
         if (!req.session.user)
@@ -108,7 +113,7 @@ exports.default = {
     async itemList(req, res) {
         const search = req.getQueryParam('search');
         const universe = await api_1.default.universe.getOne(req.session.user, { shortname: req.params.universeShortname });
-        const items = await api_1.default.item.getByUniverseShortname(req.session.user, req.params.universeShortname, utils_1.perms.READ, {
+        const items = (await api_1.default.item.getByUniverseShortname(req.session.user, req.params.universeShortname, utils_1.perms.READ, {
             sort: req.getQueryParam('sort'),
             sortDesc: req.getQueryParam('sort_order') === 'desc',
             limit: req.getQueryParamAsNumber('limit'),
@@ -116,7 +121,7 @@ exports.default = {
             tag: req.getQueryParam('tag'),
             author: req.getQueryParam('author'),
             search,
-        });
+        })).filter(item => !item.shortname.startsWith('_'));
         res.prepareRender('universeItemList', {
             items: items.map(item => ({ ...item, itemTypeName: ((universe.obj_data['cats'] ?? {})[item.item_type] ?? ['Missing Category'])[0] })),
             universe,

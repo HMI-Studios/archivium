@@ -1,21 +1,25 @@
-mixin authorList(authors, author_permissions)
+mixin linkList(links)
   -
     let i = 0;
+  span
+    each link in links
+      -
+        let suff;
+        if (i === links.length - 1) suff = '';
+        else if (i === links.length - 2) suff = links.length === 2 ? ' and ' : ', and ';
+        else suff = ', ';
+      a.link.link-animated(href=link[1])= link[0]
+      | #{suff}
+      - i++;
+
+mixin authorList(authors, author_permissions)
+  -
     const authorsList = Object
       .keys(authors)
       .filter(key => author_permissions[key] >= perms.WRITE)
       .sort((a, b) => author_permissions[a] > author_permissions[b] ? -1 : 1)
-      .map(key => authors[key]);
-  span
-    each author in authorsList
-      -
-        let suff;
-        if (i === authorsList.length - 1) suff = '';
-        else if (i === authorsList.length - 2) suff = authorsList.length === 2 ? ' and ' : ', and ';
-        else suff = ', ';
-      a.link.link-animated(href=`${ADDR_PREFIX}/users/${author}`)= author
-      | #{suff}
-      - i++;
+      .map(key => [authors[key], `${ADDR_PREFIX}/users/${authors[key]}`]);
+  +linkList(authorsList)
 
 mixin highlight(string, keyword, italics)
   -

@@ -5,6 +5,7 @@ import { fetchAsync } from '../helpers';
 import md5 from 'md5';
 import * as Y from 'yjs';
 import { deepCompare } from '../../../src/lib/utils';
+import type { User } from '../../../src/api/models/user';
 
 export type DocUser = {
   clientId: number,
@@ -136,7 +137,7 @@ export function useProvider(url: string, name: string, ydoc: Y.Doc): [
       },
     });
 
-    fetchAsync('/api/me').then(async (user) => {
+    fetchAsync('/api/me').then(async (user: User) => {
       const me: DocUser = {
         clientId: provider.awareness!.clientID,
         name: user.username,

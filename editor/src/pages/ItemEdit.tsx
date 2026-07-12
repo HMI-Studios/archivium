@@ -4,10 +4,10 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import * as Y from 'yjs';
-import type { Item } from '../../../src/api/models/item';
+import { type BuiltinTab, type Item, type ObjData } from '../../../src/api/models/item';
 import { editorExtensions, extractLinkData, type LinkData, type TiptapContext } from '../../../src/lib/editor';
 import { splitIgnoringQuotes } from '../../../src/lib/markdown';
-import { indexedToJson, jsonToIndexed, type IndexedDocument } from '../../../src/lib/tiptapHelpers';
+import { indexedToJson, jsonToIndexed } from '../../../src/lib/tiptapHelpers';
 import CustomDataEditor from '../components/CustomDataEditor';
 import EditorFrame from '../components/EditorFrame';
 import { FormPillList } from '../components/FormPillList';
@@ -31,21 +31,14 @@ export type Categories = {
 export type EventItem = [string, string, number, string, number];
 export type ItemOptionEntry = { title: string, type: string, tags: string[] };
 
-const BUILTIN_TABS = ['lineage', 'map', 'timeline', 'gallery'] as const;
-
-type ObjData = {
-  notes?: boolean,
-  comments?: boolean,
-  body?: IndexedDocument,
-  tabs?: { [key: string]: any },
-} & { [K in typeof BUILTIN_TABS[number]]?: any };
-
 type ModalType = 'newTab';
 
 export type ItemEditProps = {
   universeLink: (universe: string) => string,
   providerAddress: string,
 };
+
+export const BUILTIN_TABS: BuiltinTab[] = ['lineage', 'map', 'timeline', 'gallery'];
 
 function computeTabs(objData: ObjData): Record<string, string> {
   return {
@@ -157,8 +150,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
         if (!ydoc.getMap('config').get('initialContentLoading')) {
           ydoc.getMap('config').set('initialContentLoading', true);
 
-          await fetchData(`/api/universes/${universeShort}/items/${itemShort}`, async (data) => {
-            const objData = JSON.parse(data.obj_data) as ObjData;
+          await fetchData(`/api/universes/${universeShort}/items/${itemShort}`, async (data: Item) => {
+            const objData = data.obj_data;
             let initialContent: Object | null = null;
             if (objData.body) {
               const links: LinkData[] = [];
@@ -179,7 +172,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
               await Promise.all(fetchPromises);
               ydoc.getMap('config').set('itemExistsCache', itemExistsCache);
             }
-            delete data.obj_data;
+            // delete data.obj_data;
 
             if (ydoc.getMap('config').get('initialContentLoaded')) {
               // Someone else beat us to loading it first, return
@@ -295,6 +288,10 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
     }} />;
   }
 
+  const filteredItemKeys = Object.keys(itemMap).filter(key => itemMap[key].type in categories);
+  const itemTitles = itemMap ? filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {}) : {};
+  const itemTypes = (itemMap && categories) ? filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {}) : {};
+
   const tabs: Record<string, ReactElement | null> = {
     ...customTabs,
     body: (
@@ -336,8 +333,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
           return [url];
         }}
-        itemMap={itemMap}
-        categories={categories}
+        itemTitles={itemTitles}
+        itemGroups={itemTypes}
         gallery={item.gallery}
       />
     ),
@@ -406,7 +403,10 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       {/* Editor Page */}
       <div className='d-flex justify-between align-baseline'>
         <h2>{T('Edit %s', item.title)}</h2>
-        <a className='link link-animated color-error' href={`${context.universeLink(universeShort)}/items/${itemShort}`}>{T('Discard Changes')}</a>
+        <a
+          className='link link-animated color-error'
+          href={item.shortname.startsWith('_') ? `${context.universeLink(universeShort)}/edit` : `${context.universeLink(universeShort)}/items/${itemShort}`}
+        >{T('Discard Changes')}</a>
       </div>
 
       {/* Document user icons */}
@@ -494,7 +494,8 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
           <SaveBtn<Item>
             data={{ ...item, obj_data: objData }}
             saveUrl={`/api/universes/${universeShort}/items/${itemShort}`}
-            previewUrl={`${context.universeLink(universeShort)}/items/${item.shortname}`}
+            previewUrl={item.shortname.startsWith('_') ? `${context.universeLink(universeShort)}/edit` : `${context.universeLink(universeShort)}/items/${item.shortname}`}
+            previewText={item.shortname.startsWith('_') ? T('Return') : undefined}
             onSave={(data) => {
               if (data.shortname !== itemShort) {
                 navigate(`/editor/universes/${universeShort}/items/${data.shortname}`);
@@ -522,7 +523,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
                     backgroundColor: user.color ?? '',
                   }} />
                 ))}
-                <h3 className='navbarBtnLink navbarText ma-0 material-symbols-outlined heavy' onClick={() =>  setCurrentModal('newTab')}>add</h3>
+                <h3 id='add-tab' className='navbarBtnLink navbarText ma-0 material-symbols-outlined heavy' onClick={() =>  setCurrentModal('newTab')}>add</h3>
               </li>
             </ul>
           </div>

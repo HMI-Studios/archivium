@@ -213,5 +213,5 @@ const errorLogger = (err, req, res, next) => {
 };
 app.use(errorLogger);
 app.listen(config_1.PORT, () => {
-    logger_1.default.info(`Example app listening at http://localhost:${config_1.PORT}`);
+    logger_1.default.info(`Server listening at http://localhost:${config_1.PORT}`);
 });

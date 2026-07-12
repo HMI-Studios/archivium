@@ -15,7 +15,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider';
 import * as Y from 'yjs';
 
 export interface TiptapContext {
-  currentUniverse: string;
+  currentUniverse: string | null;
   universeLink: (universe: string) => string;
   itemExists: (universe: string, item: string) => boolean;
   headings: { title: string, level: number }[],
@@ -59,11 +59,13 @@ export function shorthandResolver(href: string, ctx: TiptapContext | undefined):
   if (ctx) {
     if (href.startsWith('@')) {
       const { universe, item, hash, query } = extractLinkData(href);
-      if (item) {;
-        const universeLink = ctx.universeLink(universe ?? ctx.currentUniverse);
+      if (item) {
+        const universeShort = universe ?? ctx.currentUniverse;
+        if (!universeShort) return { href };
+        const universeLink = ctx.universeLink(universeShort);
         return {
           href: `${universeLink}/items/${item}${query ? `?${query}` : ''}${hash ? `#${hash}` : ''}`,
-          exists: ctx.itemExists(universe ?? ctx.currentUniverse, item),
+          exists: ctx.itemExists(universeShort, item),
         };
       }
     }

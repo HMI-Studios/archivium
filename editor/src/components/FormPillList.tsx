@@ -1,18 +1,22 @@
-import { useState, type ChangeEventHandler } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { handleFormBlur, T } from '../helpers';
 import type { DocSelection, DocUser } from '../hooks/useProvider';
 
-export type FormTextAreaProps = {
+export type FormPillListProps = {
   id: string,
   title: string,
   values: string[],
   onChange: (newValues: string[]) => void,
-  setAwareness: (data: Partial<DocSelection>) => void,
-  selectors: { [el: string]: DocUser },
+  setAwareness?: (data: Partial<DocSelection>) => void,
+  selectors?: { [el: string]: DocUser },
+  containerStyles?: CSSProperties,
   uniqueValues?: boolean,
 };
 
-export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwareness, selectors }: FormTextAreaProps) => {
+export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwareness, selectors, containerStyles }: FormPillListProps) => {
+  if (!setAwareness) setAwareness = () => {};
+  if (!selectors) selectors = {};
+
   const [newValue, setNewValue] = useState<string>('');
 
   const handleNewValues = (newValues: string[]): void => {
@@ -32,7 +36,7 @@ export const FormPillList = ({ id, title, values, uniqueValues, onChange, setAwa
   };
 
   return (
-    <div className='inputGroup'>
+    <div className='inputGroup' style={containerStyles}>
       <label htmlFor={id}>{title}:</label>
       <div
         className='pill-list'

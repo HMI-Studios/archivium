@@ -5,8 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NoteAPI = void 0;
 const crypto_1 = __importDefault(require("crypto"));
-const utils_1 = require("../utils");
 const errors_1 = require("../../errors");
+const utils_1 = require("../utils");
 class NoteAPI {
     api;
     constructor(api) {
@@ -58,7 +58,7 @@ class NoteAPI {
           note.is_public, note.author_id,
           note.created_at, note.updated_at,
           tag.tags,
-          ${options?.fullBody ? 'note.body' : 'SUBSTRING(note.body, 1, 255) AS body'}
+          ${options?.fullBody ? 'note.body' : `SUBSTRING(JSON_UNQUOTE(JSON_EXTRACT(note.body, '$.text')), 1, 255) AS body`}
           ${options?.connections ? ', item.items' : ''}
           ${options?.connections ? ', board.boards' : ''}
           ${options?.search ? ', LOCATE(?, note.body) AS match_pos' : ''}
@@ -159,16 +159,22 @@ class NoteAPI {
         if (!user)
             throw new errors_1.UnauthorizedError();
         const uuid = crypto_1.default.randomUUID();
+        if (title === undefined || is_public === undefined)
+            throw new errors_1.ValidationError('Missing required fields.');
         const queryString = `INSERT INTO note (uuid, title, body, is_public, author_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);`;
-        await (0, utils_1.executeQuery)(queryString, [uuid, title, body, is_public, user.id, new Date(), new Date()]);
-        const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
-        this.putTags(user, uuid, trimmedTags);
+        await (0, utils_1.executeQuery)(queryString, [uuid, title, body ? JSON.stringify(body) : null, is_public, user.id, new Date(), new Date()]);
+        if (tags) {
+            const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
+            this.putTags(user, uuid, trimmedTags);
+        }
         return uuid;
     }
     async put(user, uuid, changes) {
         if (!user)
             throw new errors_1.UnauthorizedError();
         const { title, body, is_public, items, boards, tags } = changes;
+        if (title === undefined || is_public === undefined)
+            throw new errors_1.ValidationError();
         const note = await this.getOne(user, uuid);
         const queryString = `
         UPDATE note
@@ -178,9 +184,9 @@ class NoteAPI {
           is_public = ?
         WHERE uuid = ?;
       `;
-        const data = await (0, utils_1.executeQuery)(queryString, [title, body, is_public, note.uuid]);
+        const data = await (0, utils_1.executeQuery)(queryString, [title, body ? JSON.stringify(body) : null, is_public, note.uuid]);
         await (0, utils_1.executeQuery)('DELETE FROM itemnote WHERE note_id = ?', [note.id]);
-        for (const { item, universe } of items ?? []) {
+        for (const [, item, , universe] of items ?? []) {
             await this.linkToItem(user, universe, item, uuid);
         }
         if (tags) {
@@ -215,7 +221,7 @@ class NoteAPI {
             throw new errors_1.ValidationError('Note UUID is required');
         if (!user)
             throw new errors_1.UnauthorizedError();
-        const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
+        const item = await this.api.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.READ, true);
         const note = await this.getOne(user, noteUuid);
         const queryString = `INSERT INTO itemnote (item_id, note_id) VALUES (?, ?)`;
         await (0, utils_1.executeQuery)(queryString, [item.id, note.id]);

@@ -130,7 +130,7 @@ block content
     tbody
       if items.length === 0
         tr
-          td(colspan=3) #{T('% hasn\'t created any items.', user.username)}
+          td(colspan=3) #{T('%s hasn\'t created any items.', user.username)}
       else
         each item in items
           tr

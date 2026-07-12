@@ -290,35 +290,17 @@ class ItemAPI {
     `, [item.universe_short, item.shortname]);
         item.links = links;
         if (item.obj_data) {
-            const objData = JSON.parse(item.obj_data);
             const links = await (0, utils_1.executeQuery)(`
         SELECT to_universe_short, to_item_short, href
         FROM itemlink
         WHERE from_item = ?
       `, [item.id]);
-            if (typeof objData.body === 'string') {
-                const replacements = {};
-                const attachments = {};
-                for (const { to_universe_short, to_item_short, href } of links) {
-                    const replacement = to_universe_short === item.universe_short ? `${to_item_short}` : `${to_universe_short}/${to_item_short}`;
-                    replacements[href] = replacement;
-                    const match = href.match(/[?#]/);
-                    const attachment = match ? `${match[0]}${href.slice(match.index + 1)}` : '';
-                    attachments[href] = attachment;
-                }
-                objData.body = objData.body.replace(/(?<!\\)(\[[^\]]*?\])\(([^)]+)\)/g, (match, brackets, parens) => {
-                    if (parens in replacements) {
-                        return `${brackets}(@${replacements[parens]}${attachments[parens]})`;
-                    }
-                    return match;
-                });
-            }
-            else if (objData.body) {
+            if (item.obj_data.body) {
                 const linkMap = {};
                 for (const { to_universe_short, to_item_short, href } of links) {
                     linkMap[href] = [to_universe_short, to_item_short];
                 }
-                (0, tiptapHelpers_1.updateLinks)(objData.body, (href) => {
+                (0, tiptapHelpers_1.updateLinks)(item.obj_data.body, (href) => {
                     if (href in linkMap) {
                         const linkData = (0, editor_1.extractLinkData)(href);
                         if (linkData.item) {
@@ -337,7 +319,6 @@ class ItemAPI {
                     return href;
                 });
             }
-            item.obj_data = JSON.stringify(objData);
         }
         if (user) {
             const notifs = await (0, utils_1.executeQuery)(`
@@ -545,12 +526,14 @@ class ItemAPI {
     async post(user, body, universeShortName) {
         if (!user)
             throw new errors_1.UnauthorizedError();
-        const { title, shortname, item_type, parent_id, obj_data } = body;
+        const { title, shortname, item_type, parent_id, obj_data, skipValidation } = body;
         try {
-            const shortnameError = this.api.universe.validateShortname(shortname);
-            if (shortnameError)
-                throw new errors_1.ValidationError(shortnameError);
-            const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, utils_1.perms.WRITE);
+            if (!skipValidation) {
+                const shortnameError = this.api.universe.validateShortname(shortname);
+                if (shortnameError)
+                    throw new errors_1.ValidationError(shortnameError);
+            }
+            const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortName }, skipValidation ? utils_1.perms.ADMIN : utils_1.perms.WRITE);
             if (!title || !shortname || !item_type || !obj_data)
                 throw new errors_1.ValidationError('Missing required fields');
             let data;
@@ -603,7 +586,7 @@ class ItemAPI {
                 title: body.title,
                 shortname: body.shortname,
                 item_type: body.item_type,
-                obj_data: JSON.stringify(body.obj_data),
+                obj_data: body.obj_data,
                 tags: body.tags ?? [],
             };
             const itemId = await this.put(user, universeShortname, itemShortname, changes, conn);
@@ -977,8 +960,7 @@ class ItemAPI {
         if (!title || !obj_data)
             throw new errors_1.ValidationError('Missing required fields');
         const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE);
-        const objData = JSON.parse(obj_data);
-        await this.handleLinks(item, objData, conn);
+        await this.handleLinks(item, obj_data, conn);
         if (tags) {
             const trimmedTags = tags.map(tag => tag[0] === '#' ? tag.substring(1) : tag);
             // If tags list is provided, we can just as well handle it here
@@ -1012,9 +994,9 @@ class ItemAPI {
           last_updated_by = ?
         WHERE id = ?;
       `;
-            await conn.execute(queryString, [title, shortname ?? item.shortname, item_type ?? item.item_type, JSON.stringify(objData), user.id, item.id]);
+            await conn.execute(queryString, [title, shortname ?? item.shortname, item_type ?? item.item_type, JSON.stringify(obj_data), user.id, item.id]);
             if (title !== item.title || shortname !== item.shortname || item_type !== item.item_type ||
-                !(0, utils_2.deepCompare)(objData, JSON.parse(item.obj_data)) || !(0, utils_2.deepCompare)(tags, item.tags)) {
+                !(0, utils_2.deepCompare)(obj_data, item.obj_data) || !(0, utils_2.deepCompare)(tags, item.tags)) {
                 this.markUpdated(item.id, conn);
                 this.api.universe.putUpdatedAtWithTransaction(conn, item.universe_id, new Date());
             }
@@ -1035,7 +1017,7 @@ class ItemAPI {
             throw new errors_1.UnauthorizedError();
         const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE);
         item.obj_data = {
-            ...JSON.parse(item.obj_data),
+            ...item.obj_data,
             ...changes,
         };
         let data;

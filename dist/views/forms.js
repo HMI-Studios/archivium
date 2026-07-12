@@ -54,7 +54,12 @@ exports.default = {
         try {
             const id = await api_1.default.universe.put(req.session.user, req.params.universeShortname, req.body);
             const universe = await api_1.default.universe.getOne(req.session.user, { 'universe.id': id }, utils_1.perms.READ);
-            res.redirect(`${(0, templates_1.universeLink)(req, universe.shortname)}`);
+            if (req.body.next) {
+                res.redirect(req.body.next);
+            }
+            else {
+                res.redirect(`${(0, templates_1.universeLink)(req, universe.shortname)}`);
+            }
         }
         catch (err) {
             if (err instanceof errors_1.ModelError) {
@@ -135,7 +140,7 @@ exports.default = {
             title: body.note_title,
             is_public: body.note_public === 'on',
             body: body.note_body,
-            items: body.items,
+            items: (body.items ?? []).map(({ item, universe }) => ([null, item, null, universe])),
             boards: body.boards,
             tags: body.note_tags?.split(' ') ?? [],
         });

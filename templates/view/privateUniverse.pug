@@ -4,26 +4,23 @@ block title
   title #{T('Access Denied')}
 
 block scripts
-  script 
+  script
     include /static/scripts/domUtils.js
     include /static/scripts/fetchUtils.js
     include /static/scripts/markdown/parse.js
     include /static/scripts/markdown/render.js
 
 block content
-  if publicBody
+  if publicPage
     br
     .sheet
-      #md-body
-        script!= `window.content = ${JSON.stringify(publicBody)};`
-        script.
-          loadMarkdown(document.getElementById('md-body'), null, window.content);
+      .markdown !{publicPage.content}
     br
   else
     .center.d-flex.flex-col.align-center
       span.mt-4.material-symbols-outlined(style={ 'font-size': '8rem' }) visibility_off
       h1.mt-0 Access Denied
-      p 
+      p
         | #{T('Looks like the universe you\'re trying to reach is private.')}
         br
         if contextUser
@@ -31,7 +28,7 @@ block content
             | #{T('You have been invited to access this universe with %s permissions:', T(`perms_${accessRequest.permission_level}`).toLowerCase())} 
           else
             | #{T('You can ask the owner of this universe for access by clicking the button below:')}
-  
+
   .center.d-flex.flex-col.align-center
     if contextUser
         script.

@@ -1,13 +1,13 @@
 import { Request } from 'express';
 import pug from 'pug';
 import api from './api';
-import { ParsedUniverse } from './api/models/universe';
 import { getPfpUrl, handleAsNull, perms, plans, tierAllowance, tiers } from './api/utils';
 import { ADDR_PREFIX, DOMAIN, PROVIDER_ADDRESS, VAPID_PUBLIC_KEY } from './config';
 import { ForbiddenError, NotFoundError, UnauthorizedError } from './errors';
 import { lang, locale, sprintf, T } from './locale';
 import logger from './logger';
 import themes from './themes';
+import { Universe } from './api/models/universe';
 
 export function universeLink(req: Request, uniShort) {
   const displayUniverse = req.headers['x-subdomain'];
@@ -39,7 +39,7 @@ async function contextData(req: Request) {
   if (searchQueries.toString()) pageQuery.append('search', searchQueries.toString());
 
   const displayUniverse = req.headers['x-subdomain'];
-  let contextUniverse: ParsedUniverse | null = null;
+  let contextUniverse: Universe | null = null;
   if (displayUniverse) {
     contextUniverse = await api.universe.getOne(user, { 'universe.shortname': displayUniverse })
       .catch(handleAsNull([NotFoundError, UnauthorizedError, ForbiddenError]));

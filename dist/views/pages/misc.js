@@ -60,7 +60,7 @@ exports.default = {
         const user = req.session.user;
         if (!user)
             throw new errors_1.UnauthorizedError();
-        const notes = await api_1.default.note.getByUsername(user, user.username);
+        const notes = await api_1.default.note.getByUsername(user, user.username, {}, { connections: true });
         const noteAuthors = { [user.id]: user };
         res.prepareRender('notes', {
             notes,

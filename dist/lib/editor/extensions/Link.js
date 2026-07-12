@@ -24,7 +24,7 @@ const Link = extension_link_1.default.configure({
     addAttributes() {
         return {
             href: {
-                parseHTML: element => element.getAttribute('data-href'),
+                parseHTML: element => element.getAttribute('data-href') ?? element.getAttribute('href'),
             },
             title: {
                 default: null,

@@ -211,6 +211,7 @@ function default_1(app) {
     }, (get, post) => {
         get('/editor', sites.ALL, [auth_1.default.verifySessionOrRedirect], pages_1.default.misc.editor);
         get('/editor/*', sites.ALL, [auth_1.default.verifySessionOrRedirect], pages_1.default.misc.editor);
+        get('/notes/*', sites.ALL, [auth_1.default.verifySessionOrRedirect], pages_1.default.misc.editor);
         /* Universe Pages */
         get('/universes', sites.NORMAL, [], pages_1.default.universe.list);
         get('/universes/create', sites.NORMAL, [auth_1.default.verifySessionOrRedirect], pages_1.default.universe.create);
