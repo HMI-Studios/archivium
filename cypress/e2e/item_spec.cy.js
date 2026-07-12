@@ -48,6 +48,7 @@ describe('Item spec', () => {
     cy.intercept('GET', '/api/universes/public-test-universe/items/test-character').as('request');
     cy.get('#action-bar').contains('Edit').click();
     cy.wait('@request');
+    cy.get('.tiptap-editor .tiptap').should('be.visible');
 
     cy.window().then((win) => {
       const oldContent = win.document.querySelector('.tiptap-editor .tiptap').textContent;
@@ -69,6 +70,7 @@ describe('Item spec', () => {
     cy.intercept('GET', '/api/universes/public-test-universe/items/test-character').as('request');
     cy.get('#action-bar').contains('Edit').click();
     cy.wait('@request');
+    cy.get('.tiptap-editor .tiptap').should('be.visible');
 
     cy.window().then((win) => {
       const oldContent = win.document.querySelector('.tiptap-editor .tiptap').textContent;
