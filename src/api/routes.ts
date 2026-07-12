@@ -1,14 +1,14 @@
+import cors from 'cors';
 import { Express, Handler, Request, Response } from 'express';
-import { ADDR_PREFIX } from '../config';
-import Auth from '../middleware/auth';
-import api from '.';
-import logger from '../logger';
-import { perms, executeQuery, getPfpUrl, handleAsNull } from './utils';
 import { Multer } from 'multer';
+import api from '.';
+import { ADDR_PREFIX, CORS_ALLOWED_DOMAINS, DEV_MODE } from '../config';
+import { ForbiddenError, NotFoundError, RequestError } from '../errors';
+import logger from '../logger';
 import { Note } from './models/note';
-import { User } from './models/user';
-import { NotFoundError } from '../errors';
 import { Session } from './models/session';
+import { User } from './models/user';
+import { handleAsNull, perms } from './utils';
 
 type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type APIRouteHandler = (req: Request<{ [key: string]: string }>, res: Response) => Promise<any>;
@@ -76,7 +76,31 @@ export default function (app: Express, upload: Multer) {
   app.use('/api', (req, res, next) => {
     res.set('Content-Type', 'application/json; charset=utf-8');
     next();
-  })
+  });
+
+  const isAllowedOrigin = (origin?: string): boolean => {
+    if (!origin) return true;
+    if (origin.startsWith('http://localhost') && DEV_MODE) return true;
+
+    return CORS_ALLOWED_DOMAINS.some((domain) => {
+      const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}$`, "i");
+      return regex.test(origin);
+    });
+  };
+
+  app.use('/api', cors({
+    origin: function (origin: string, callback: (error: Error | null, isAllowed?: boolean) => void) {
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      callback(new ForbiddenError('Not allowed by CORS'));
+    },
+    credentials: true
+  }));
+
+  app.use('/api', (err: Error, req: Request, res: Response, next: () => void) => {
+    if (!err) return next();
+    const code = err instanceof RequestError ? err.code : 500;
+    res.status(code).json({ error: err.message, code });
+  });
 
   const apiRoutes = new APIRoute('/api', {}, [
     new APIRoute('/*'),

@@ -51,6 +51,7 @@
     "@tiptap/static-renderer": "^3.1.0",
     "@tiptap/y-tiptap": "^3.0.1",
     "axios": "^1.13.2",
+    "cors": "^2.8.5",
     "buffer-image-size": "^0.6.4",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
@@ -80,6 +81,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsdom": "^21.1.7",
     "@types/lodash": "^4.17.18",

@@ -36,7 +36,7 @@ const createSession = async (req, res, next) => {
     res.cookie('archiviumuid', session.hash, {
         httpOnly: true,
         secure: true,
-        sameSite: 'lax',
+        sameSite: config_1.DEV_MODE ? 'none' : 'lax',
         maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
     });
     req.session = {

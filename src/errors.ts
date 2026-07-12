@@ -32,7 +32,7 @@ export class ModelError extends RequestError {
 export class RateLimitError extends ModelError {
   readonly code: number = HttpStatusCode.TooManyRequests;
   declare readonly data: Date;
-  
+
   constructor(tryAgain?: Date) {
     super('Rate limit exceeded, try again at:', { data: tryAgain });
   }

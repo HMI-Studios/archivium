@@ -4,11 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = default_1;
-const config_1 = require("../config");
+const cors_1 = __importDefault(require("cors"));
 const _1 = __importDefault(require("."));
+const config_1 = require("../config");
+const errors_1 = require("../errors");
 const logger_1 = __importDefault(require("../logger"));
 const utils_1 = require("./utils");
-const errors_1 = require("../errors");
 function default_1(app, upload) {
     class APIRoute {
         path;
@@ -72,6 +73,30 @@ function default_1(app, upload) {
     app.use('/api', (req, res, next) => {
         res.set('Content-Type', 'application/json; charset=utf-8');
         next();
+    });
+    const isAllowedOrigin = (origin) => {
+        if (!origin)
+            return true;
+        if (origin.startsWith('http://localhost') && config_1.DEV_MODE)
+            return true;
+        return config_1.CORS_ALLOWED_DOMAINS.some((domain) => {
+            const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}$`, "i");
+            return regex.test(origin);
+        });
+    };
+    app.use('/api', (0, cors_1.default)({
+        origin: function (origin, callback) {
+            if (isAllowedOrigin(origin))
+                return callback(null, true);
+            callback(new errors_1.ForbiddenError('Not allowed by CORS'));
+        },
+        credentials: true
+    }));
+    app.use('/api', (err, req, res, next) => {
+        if (!err)
+            return next();
+        const code = err instanceof errors_1.RequestError ? err.code : 500;
+        res.status(code).json({ error: err.message, code });
     });
     const apiRoutes = new APIRoute('/api', {}, [
         new APIRoute('/*'),
