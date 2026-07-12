@@ -28,19 +28,6 @@ const createSession = async (req: Request, res: Response, next: NextFunction): P
             user: session.user,
           }
         }
-
-        res.cookie('archiviumuid', session.hash, {
-          httpOnly: true,
-          secure: true,
-          sameSite: 'lax',
-          maxAge: SESSION_LIFETIME_MS,
-        });
-
-
-        // Session is old enough that we should refresh it
-        if (sessionAge > SESSION_REFRESH_THRESHOLD_MS) {
-          await api.session.refresh(session.id);
-        }
         return next();
       } else {
         // Session is older than 7 days, it needs to be replaced

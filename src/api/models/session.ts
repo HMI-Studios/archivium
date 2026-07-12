@@ -58,13 +58,6 @@ export class SessionAPI {
   }
 
   /**
-   * Slides a session's expiry window forward by resetting created_at to now.
-   */
-  async refresh(id: number): Promise<ResultSetHeader> {
-    return await executeQuery<ResultSetHeader>('UPDATE session SET created_at = NOW() WHERE id = ?', [id]);
-  }
-
-  /**
    * for internal use only - does not conform to the standard return format!
    * @param options
    * @returns {Promise<ResultSetHeader>}

@@ -26,16 +26,6 @@ const createSession = async (req, res, next) => {
                         user: session.user,
                     };
                 }
-                res.cookie('archiviumuid', session.hash, {
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'lax',
-                    maxAge: SESSION_LIFETIME_MS,
-                });
-                // Session is old enough that we should refresh it
-                if (sessionAge > SESSION_REFRESH_THRESHOLD_MS) {
-                    await api_1.default.session.refresh(session.id);
-                }
                 return next();
             }
             else {
