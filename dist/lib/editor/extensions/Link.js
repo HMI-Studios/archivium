@@ -25,7 +25,10 @@ const Link = extension_link_1.default.configure({
         return {
             href: {
                 parseHTML: element => element.getAttribute('data-href'),
-            }
+            },
+            title: {
+                default: null,
+            },
         };
     },
     renderHTML({ HTMLAttributes }) {

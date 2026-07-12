@@ -1,6 +1,6 @@
 import type { SetImageOptions } from '@tiptap/extension-image';
 import { Editor } from '@tiptap/react';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import * as Y from 'yjs';
@@ -29,7 +29,7 @@ export type Categories = {
 };
 
 export type EventItem = [string, string, number, string, number];
-export type ItemOptionEntry = { title: string, type: string };
+export type ItemOptionEntry = { title: string, type: string, tags: string[] };
 
 const BUILTIN_TABS = ['lineage', 'map', 'timeline', 'gallery'] as const;
 
@@ -89,6 +89,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
   const [currentTab, setCurrentTab] = useState<string | null>(null);
   const [eventItemMap, setEventItemMap] = useState<Record<string, EventItem[]>>();
   const [itemMap, setItemMap] = useState<Record<string, ItemOptionEntry>>();
+  const itemMapRef = useRef<Record<string, ItemOptionEntry>>({});
 
   const [loading, setLoading] = useState(true);
 
@@ -99,6 +100,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       return (itemExistsCache[universe] ?? {})[item] ?? false;
     },
     headings: [],
+    items: () => itemMapRef.current,
   };
 
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -142,10 +144,11 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       });
       const itemMapPromise = fetchData(`/api/universes/${universeShort}/items`, (items) => {
         const newItemMap: Record<number, ItemOptionEntry> = {};
-        for (const { shortname, title, item_type } of items) {
+        for (const { shortname, title, item_type, tags } of items) {
           if (shortname === itemShort) continue;
-          newItemMap[shortname] = { title, type: item_type };
+          newItemMap[shortname] = { title, type: item_type, tags: tags ?? [] };
         }
+        itemMapRef.current = newItemMap;
         setItemMap(newItemMap);
       });
 
