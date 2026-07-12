@@ -152,6 +152,82 @@ export default {
     res.prepareRender('universeAdmin', { universe, requests, invites, ownerCount, totalStoredImages, tierLimits: tierLimits[universe.tier ?? 0] });
   },
 
+  async stats(req, res) {
+    const universe = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.WRITE);
+    const cats: { [type: string]: [string, string, string] } = universe.obj_data['cats'] ?? {};
+
+    const items = await api.item.getByUniverseShortname(req.session.user, universe.shortname, perms.READ, { includeData: true });
+    const tabData = await api.item.getUniverseTabData(universe);
+
+    const { edges, deadLinks } = await api.item.getUniverseLinkStats(universe);
+
+    let totalWords = 0;
+    const edgeCounts: { [shortname: string]: { from: number, to: number } } = {};
+    const wordCounts: { shortname: string, title: string, typeName: string, typeColor: string, words: number }[] = [];
+    const linkCounts: { shortname: string, title: string, from: number, to: number }[] = [];
+    const tabPresence: { shortname: string, title: string, tabs: { [tab: string]: 'active' | 'hidden' | 'none' } }[] = [];
+    const nodeTitles: { [shortname: string]: string } = {};
+
+    for (const edge of edges) {
+      if (!edgeCounts[edge.from]) edgeCounts[edge.from] = { from: 0, to: 0 };
+      edgeCounts[edge.from].from++;
+      if (!edgeCounts[edge.to]) edgeCounts[edge.to] = { from: 0, to: 0 };
+      edgeCounts[edge.to].to++;
+    }
+
+    for (const item of items) {
+      const objData = typeof item.obj_data === 'string' ? JSON.parse(item.obj_data) : item.obj_data;
+      const words = objData.body?.text ? objData.body.text.trim().split(/\s+/).filter(Boolean).length : 0;
+      totalWords += words;
+      nodeTitles[item.shortname] = item.title;
+      wordCounts.push({
+        shortname: item.shortname,
+        title: item.title,
+        typeName: (cats[item.item_type] ?? [item.item_type])[0],
+        typeColor: (cats[item.item_type] ?? [])[2],
+        words,
+      });
+      linkCounts.push({
+        shortname: item.shortname,
+        title: item.title,
+        from: edgeCounts[item.shortname]?.from ?? 0,
+        to: edgeCounts[item.shortname]?.to ?? 0,
+      });
+
+      const tabState = (flagged: boolean, tabType: string): 'active' | 'hidden' | 'none' => {
+        if (flagged) return 'active';
+        return tabData[tabType].has(item.id) ? 'hidden' : 'none';
+      };
+      tabPresence.push({
+        shortname: item.shortname,
+        title: item.title,
+        tabs: {
+          gallery: tabState(!!objData.gallery?.title, 'gallery'),
+          lineage: tabState(!!objData.lineage?.title, 'lineage'),
+          timeline: tabState(!!objData.timeline?.title, 'timeline'),
+          map: tabState(!!objData.map?.title, 'map'),
+          notes: tabState(!!objData.notes, 'notes'),
+          comments: tabState(!!objData.comments, 'comments'),
+          custom: Object.keys(objData.tabs ?? {}).length > 0 ? 'active' : 'none',
+        },
+      });
+    }
+    wordCounts.sort((a, b) => b.words - a.words);
+    linkCounts.sort((a, b) => a.from === b.from ? (a.to > b.to ? -1 : 1) : (a.from > b.from ? -1 : 1));
+
+    res.prepareRender('universeStats', {
+      universe,
+      totalWords,
+      wordCounts,
+      tabPresence,
+      tabTypes: ['gallery', 'lineage', 'timeline', 'map', 'notes', 'comments', 'custom'],
+      nodeTitles,
+      edges,
+      deadLinks,
+      linkCounts,
+    });
+  },
+
   async upgrade(req, res) {
     const universe = await api.universe.getOne(req.session.user, { shortname: req.params.universeShortname }, perms.ADMIN);
     const sponsoredData = await api.user.getSponsoredUniverses(req.session.user);

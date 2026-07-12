@@ -202,6 +202,7 @@ export default function(app: Express) {
     get('/universes/:universeShortname/items', sites.NORMAL, [], pages.universe.itemList);
     get('/universes/:universeShortname/upgrade', sites.NORMAL, [Auth.verifySessionOrRedirect], pages.universe.upgrade);
     get('/universes/:universeShortname/admin', sites.NORMAL, [Auth.verifySessionOrRedirect], pages.universe.admin);
+    get('/universes/:universeShortname/stats', sites.NORMAL, [Auth.verifySessionOrRedirect], pages.universe.stats);
 
     /* Item Pages */
     get('/universes/:universeShortname/items/create', sites.NORMAL, [Auth.verifySessionOrRedirect], pages.item.create);
@@ -216,6 +217,7 @@ export default function(app: Express) {
     get('/discuss/:threadId', sites.DISPLAY, [], subdomain(pages.universe.discussionThread, (sub) => ({ universeShortname: sub })));
     get('/upgrade', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.universe.upgrade, (sub) => ({ universeShortname: sub })));
     get('/admin', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.universe.admin, (sub) => ({ universeShortname: sub })));
+    get('/stats', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.universe.stats, (sub) => ({ universeShortname: sub })));
 
     get('/items', sites.DISPLAY, [], subdomain(pages.universe.itemList, (sub) => ({ universeShortname: sub })));
     get('/items/create', sites.DISPLAY, [Auth.verifySessionOrRedirect], subdomain(pages.item.create, (sub) => ({ universeShortname: sub })));

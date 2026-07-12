@@ -70,6 +70,10 @@ block content
               followBtn.classList.remove('disabled');
             }
           });
+      if universe.author_permissions[contextUser.id] >= perms.WRITE
+        a.link.link-animated.d-flex.align-center(href=`${universeLink(universe.shortname)}/stats`)
+          span.material-symbols-outlined monitoring
+          |  #{T('Stats')}
       if universe.author_permissions[contextUser.id] >= perms.ADMIN
         a.link.link-animated.d-flex.align-center(href=`${universeLink(universe.shortname)}/edit`)
           span.material-symbols-outlined edit

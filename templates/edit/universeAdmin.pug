@@ -63,20 +63,27 @@ block content
             }
           });
         });
-        
+
       .d-flex.flex-col.align-start
-        .grid(style={ 'grid-template-columns': '1fr 1rem 1fr' })
-          each perm, authorId in universe.author_permissions
-            form.grid.grid-inherit.align-center(style={ 'grid-column': '1 / 4' })
-              input(class='username' name='username' type='hidden' value=universe.authors[authorId])
-              input(class='init' name='init' type='hidden' value=perm)
-              b(style={ 'grid-column': '1 / 2' }) #{universe.authors[authorId]}
-              select(class='permission_level' name='permission_level' style={ 'grid-column': '3 / 4' } disabled=((perm === perms.OWNER && ownerCount === 1) || (perm > universe.author_permissions[contextUser.id])))
-                each permission_level in Object.keys(perms).filter((item) => !isNaN(Number(item)))
-                  option(value=permission_level selected=(permission_level == perm) disabled=(permission_level > universe.author_permissions[contextUser.id])) #{T(`perms_${permission_level}`)}
+        - const permLevels = Object.keys(perms).filter((item) => !isNaN(Number(item))).map(Number).sort((a, b) => b - a);
+        each level in permLevels
+          - const authorIds = Object.keys(universe.author_permissions).filter((authorId) => universe.author_permissions[authorId] === level);
+          if authorIds.length
+            .d-flex.align-baseline.gap-1.mt-2
+              h2.ma-0 #{T(`perms_${level}`)} (#{authorIds.length})
+            .grid(style={ 'grid-template-columns': '1fr 1rem 1fr' })
+              each authorId in authorIds
+                - const perm = level;
+                form.grid.grid-inherit.align-center(style={ 'grid-column': '1 / 4' })
+                  input(class='username' name='username' type='hidden' value=universe.authors[authorId])
+                  input(class='init' name='init' type='hidden' value=perm)
+                  b(style={ 'grid-column': '1 / 2' }) #{universe.authors[authorId]}
+                  select(class='permission_level' name='permission_level' style={ 'grid-column': '3 / 4' } disabled=((perm === perms.OWNER && ownerCount === 1) || (perm > universe.author_permissions[contextUser.id])))
+                    each permission_level in Object.keys(perms).filter((item) => !isNaN(Number(item)))
+                      option(value=permission_level selected=(permission_level == perm) disabled=(permission_level > universe.author_permissions[contextUser.id])) #{T(`perms_${permission_level}`)}
 
       br
-      
+
       form
         .d-flex
           input(id='username' name='username' placeholder=T('Username'))
