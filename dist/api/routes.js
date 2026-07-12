@@ -74,23 +74,30 @@ function default_1(app, upload) {
         res.set('Content-Type', 'application/json; charset=utf-8');
         next();
     });
+    const isAllowedOrigin = (origin) => {
+        if (!origin)
+            return true;
+        if (origin.startsWith('http://localhost') && config_1.DEV_MODE)
+            return true;
+        return config_1.CORS_ALLOWED_DOMAINS.some((domain) => {
+            const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}$`, "i");
+            return regex.test(origin);
+        });
+    };
     app.use('/api', (0, cors_1.default)({
         origin: function (origin, callback) {
-            if (!origin)
+            if (isAllowedOrigin(origin))
                 return callback(null, true);
-            if (origin.startsWith('http://localhost') && config_1.DEV_MODE)
-                return callback(null, true);
-            const DOMAIN = 'archivium.net';
-            const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${DOMAIN.replace('.', '\\.')}$`, "i");
-            if (regex.test(origin)) {
-                callback(null, true);
-            }
-            else {
-                callback(new Error("Not allowed by CORS"));
-            }
+            callback(new errors_1.ForbiddenError('Not allowed by CORS'));
         },
         credentials: true
     }));
+    app.use('/api', (err, req, res, next) => {
+        if (!err)
+            return next();
+        const code = err instanceof errors_1.RequestError ? err.code : 500;
+        res.status(code).json({ error: err.message, code });
+    });
     const apiRoutes = new APIRoute('/api', {}, [
         new APIRoute('/*'),
         new APIRoute('/me', {

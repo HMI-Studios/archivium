@@ -6,6 +6,10 @@ function formatEnv(env) {
   env.HOCUSPOCUS_PORT = Number(env.HOCUSPOCUS_PORT);
   env.DEV_MODE = env.DEV_MODE === 'true';
   env.WEB_PUSH_ENABLED = env.WEB_PUSH_ENABLED === 'true';
+  env.CORS_ALLOWED_DOMAINS = (env.CORS_ALLOWED_DOMAINS ?? env.DOMAIN ?? '')
+    .split(',')
+    .map((domain: string) => domain.trim())
+    .filter(Boolean);
   return env;
 }
 
@@ -27,6 +31,7 @@ export const {
   WEB_PUSH_ENABLED,
   VAPID_PUBLIC_KEY,
   VAPID_PRIVATE_KEY,
+  CORS_ALLOWED_DOMAINS,
 } = formatEnv({ ...process.env });
 
 export const DB_CONFIG = {

@@ -2,8 +2,8 @@ import cors from 'cors';
 import { Express, Handler, Request, Response } from 'express';
 import { Multer } from 'multer';
 import api from '.';
-import { ADDR_PREFIX, DEV_MODE } from '../config';
-import { NotFoundError } from '../errors';
+import { ADDR_PREFIX, CORS_ALLOWED_DOMAINS, DEV_MODE } from '../config';
+import { ForbiddenError, NotFoundError, RequestError } from '../errors';
 import logger from '../logger';
 import { Note } from './models/note';
 import { Session } from './models/session';
@@ -78,21 +78,29 @@ export default function (app: Express, upload: Multer) {
     next();
   });
 
+  const isAllowedOrigin = (origin?: string): boolean => {
+    if (!origin) return true;
+    if (origin.startsWith('http://localhost') && DEV_MODE) return true;
+
+    return CORS_ALLOWED_DOMAINS.some((domain) => {
+      const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${domain.replace(/\./g, '\\.')}$`, "i");
+      return regex.test(origin);
+    });
+  };
+
   app.use('/api', cors({
     origin: function (origin: string, callback: (error: Error | null, isAllowed?: boolean) => void) {
-      if (!origin) return callback(null, true);
-      if (origin.startsWith('http://localhost') && DEV_MODE) return callback(null, true);
-
-      const DOMAIN = 'archivium.net';
-      const regex = new RegExp(`^https?:\/\/([a-z0-9-]+\\.)*${DOMAIN.replace('.', '\\.')}$`, "i");
-      if (regex.test(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      callback(new ForbiddenError('Not allowed by CORS'));
     },
     credentials: true
   }));
+
+  app.use('/api', (err: Error, req: Request, res: Response, next: () => void) => {
+    if (!err) return next();
+    const code = err instanceof RequestError ? err.code : 500;
+    res.status(code).json({ error: err.message, code });
+  });
 
   const apiRoutes = new APIRoute('/api', {}, [
     new APIRoute('/*'),
