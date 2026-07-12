@@ -79,7 +79,7 @@ block content
     small.color-error.hidden#validation-error
     if error
       div
-        span(style={ color: 'red', 'font-size': 'small' }) #{T(error)}
+        span.text-small.color-error #{T(error)}
 
     h2.mb-0 Story Summary
     .editor.mt-0(data-replicated-value=story.summary || '')

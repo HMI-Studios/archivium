@@ -5,12 +5,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const api_1 = __importDefault(require("../api"));
 const config_1 = require("../config");
+const SESSION_LIFETIME_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+const SESSION_REFRESH_THRESHOLD_MS = 1000 * 60 * 60 * 24; // 1 day
 const createSession = async (req, res, next) => {
     let staleSession = null;
     if (req.cookies['archiviumuid']) {
         const session = await api_1.default.session.getOne({ hash: req.cookies['archiviumuid'] });
         if (session) {
-            if (new Date().getTime() - session.created_at.getTime() < 1000 * 60 * 60 * 24 * 7) {
+            const sessionAge = new Date().getTime() - session.created_at.getTime();
+            if (sessionAge < SESSION_LIFETIME_MS) {
                 req.session = {
                     id: session.id,
                     hash: session.hash,
@@ -37,7 +40,7 @@ const createSession = async (req, res, next) => {
         httpOnly: true,
         secure: true,
         sameSite: 'lax',
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+        maxAge: SESSION_LIFETIME_MS,
     });
     req.session = {
         id: session.id,

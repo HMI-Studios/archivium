@@ -31,7 +31,6 @@ block content
     if contextUser
       a.link.d-flex.align-center
         span#notification-bell.material-symbols-outlined.mr-1(
-          style={ 'font-size': 'xx-large' }
           title='Thread Notifications'
           class={ solid: thread.notifs_enabled }
         ) #{thread.notifs_enabled ? 'notifications_active' : 'notifications'}

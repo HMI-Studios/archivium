@@ -26,6 +26,7 @@ html(lang='en')
     link(rel='stylesheet' href=`https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=${icons.join(',')}`)
     style.
       .material-symbols-outlined {
+        font-size: 1.5rem;
         font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 16
       }
       .material-symbols-outlined.solid {
@@ -63,7 +64,9 @@ html(lang='en')
   body
     header
       nav.navbar.mb-0
-        ul.navbarBtns.shrink-1.scroll-x
+        button#navHamburgerBtn.navbar-hamburger(type='button' aria-label=T('Menu') aria-expanded='false' aria-controls='mainNavList')
+          span.material-symbols-outlined menu
+        ul#mainNavList.navbarBtns.shrink-1.scroll-x
           li.navbarBtn
             a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/`) #{T('Home')}
           li.navbarBtn
@@ -139,6 +142,21 @@ html(lang='en')
               if curTemplate !== 'signup'
                 li.navbarBtn
                   a.navbarBtnLink.navbarText(href=`${ADDR_PREFIX}/signup${curTemplate === 'login' ? '' : `?${encodedPath}`}`) #{T('Create Account')}
+      .nav-overlay.hidden#navOverlay
+      script.
+        function setNavOpen(open) {
+          document.querySelector('#mainNavList').classList.toggle('nav-open', open);
+          document.querySelector('#navHamburgerBtn').setAttribute('aria-expanded', String(open));
+          document.querySelector('#navOverlay').classList.toggle('hidden', !open);
+        }
+        document.querySelector('#navHamburgerBtn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          setNavOpen(!document.querySelector('#mainNavList').classList.contains('nav-open'));
+        });
+        document.querySelector('#navOverlay').addEventListener('click', () => setNavOpen(false));
+        document.querySelector('#mainNavList').addEventListener('click', (e) => {
+          if (e.target.closest('a')) setNavOpen(false);
+        });
 
     #modal-anchor
 

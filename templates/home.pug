@@ -111,7 +111,7 @@ block content
                     td
                       a.link.link-animated(href=`${universeLink(item.universe_short)}/items/${item.shortname}`) #{item.title}
                       if !item.last_updated_by
-                        small(style='font-size: x-small;') #{T('(New)')}
+                        small.text-x-small #{T('(New)')}
                     td
                       small
                         a.link.link-animated(href=`${universeLink(item.universe_short)}`) #{item.universe}

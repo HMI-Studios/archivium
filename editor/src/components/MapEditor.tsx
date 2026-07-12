@@ -152,7 +152,7 @@ export default function MapEditor({ item, categories, onUpdate, itemMap }: MapEd
               <h2>{T('Upload Image')}</h2>
               <input type='file' accept='image/*' required></input>
               {uploadModalError && <div>
-                <span id='item-error' className='color-error' style={{ fontSize: 'small' }}>{uploadModalError}</span>
+                <span id='item-error' className='color-error' style={{ fontSize: '0.875rem' }}>{uploadModalError}</span>
               </div>}
               {uploading && <div className='d-flex justify-center align-center'>
                 <div className='loader ma-2'></div>

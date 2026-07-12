@@ -72,7 +72,7 @@ block content
         button(type='submit') #{T('Create Item')}
       if error
         div
-          span(style={'font-size': 'small'}).color-error #{T(error)}
+          span.text-small.color-error #{T(error)}
   else
     p #{T('No item types have been defined for %s yet', universe.title)} — #{T('go to the ')}
       a.link.link-animated(href=`${universeLink(universe.shortname)}/`) #{T('edit universe')}

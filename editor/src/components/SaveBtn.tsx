@@ -108,7 +108,7 @@ export default function SaveBtn<T>({ data, saveUrl, previewUrl, previewText, onS
     )}
     <button id='save-changes' onClick={() => save(0)}>{T(saveText)}</button>
     {errorMessage && <div>
-      <span id='item-error' className='color-error' style={{ fontSize: 'small' }}>{errorMessage}</span>
+      <span id='item-error' className='color-error' style={{ fontSize: '0.875rem' }}>{errorMessage}</span>
     </div>}
   </>;
 }
