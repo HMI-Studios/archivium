@@ -215,19 +215,25 @@ class MapImageAPI {
     const { originalname, buffer, mimetype } = file;
     const { width, height } = sizeOf(buffer);
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
-    const map = (await executeQuery('SELECT id FROM map WHERE item_id'))[0] as { id: number } | undefined;
-    if (!map) throw new NotFoundError();
     const existingImage = await this.getOneByItem(item).catch(handleAsNull(NotFoundError));
 
     let data!: ResultSetHeader;
     await withTransaction(async (conn) => {
+      // The map row may not exist yet if the client's autosave (which persists a newly added
+      // map tab) hasn't landed before this upload request arrives, so create it on demand.
+      let map = (await executeQuery('SELECT id FROM map WHERE item_id = ?', [item.id], conn))[0] as { id: number } | undefined;
+      if (!map) {
+        const { insertId } = await executeQuery<ResultSetHeader>('INSERT INTO map (item_id) VALUES (?)', [item.id], conn);
+        map = { id: insertId };
+      }
+
       [data] = await conn.execute<ResultSetHeader>(
         'INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)',
         [originalname.substring(0, 64), mimetype, buffer],
       );
 
       await conn.execute('UPDATE map SET image_id = ?, width = ?, height = ? WHERE id = ?', [data.insertId, width, height, map.id]);
-      
+
       if (existingImage) {
         await conn.execute(`DELETE FROM image WHERE id = ?`, [existingImage.id]);
       }
@@ -301,7 +307,7 @@ class ItemImageAPI {
         `INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`,
         [originalname.substring(0, 64), mimetype, buffer],
       );
-      
+
       await conn.execute<ResultSetHeader>(
         `INSERT INTO itemimage (item_id, image_id, label, idx) VALUES (?, ?, ?, ?)`,
         [item.id, data.insertId, '', 0],
