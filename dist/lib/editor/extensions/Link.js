@@ -6,6 +6,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("@tiptap/core");
 const extension_link_1 = __importDefault(require("@tiptap/extension-link"));
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)$/;
+async function revalidateShorthandLink(editor, type, href, context) {
+    if (!editor || !context?.resolveItemExists)
+        return;
+    await context.resolveItemExists(href);
+    if (editor.isDestroyed)
+        return;
+    const { state } = editor;
+    const tr = state.tr;
+    let touched = false;
+    state.doc.descendants((node, pos) => {
+        if (!node.isText)
+            return;
+        const mark = node.marks.find(m => m.type === type && m.attrs.href === href);
+        if (mark) {
+            tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, _revalidated: (mark.attrs._revalidated ?? 0) + 1 }));
+            touched = true;
+        }
+    });
+    if (touched) {
+        tr.setMeta('addToHistory', false);
+        editor.view.dispatch(tr);
+    }
+}
 const Link = extension_link_1.default.configure({
     autolink: true,
     HTMLAttributes: {
@@ -29,6 +52,10 @@ const Link = extension_link_1.default.configure({
             title: {
                 default: null,
             },
+            _revalidated: {
+                default: 0,
+                rendered: false,
+            },
         };
     },
     renderHTML({ HTMLAttributes }) {
@@ -47,6 +74,8 @@ const Link = extension_link_1.default.configure({
     },
     addInputRules() {
         const type = this.type;
+        const editor = this.editor;
+        const context = this.options.context;
         return [
             new core_1.InputRule({
                 find: MD_LINK_RE,
@@ -58,6 +87,9 @@ const Link = extension_link_1.default.configure({
                     tr.insertText(label, range.from, range.to);
                     tr.addMark(range.from, range.from + label.length, type.create({ href: target }));
                     tr.removeStoredMark(type);
+                    if (target.startsWith('@')) {
+                        revalidateShorthandLink(editor, type, target, context);
+                    }
                 }
             }),
         ];

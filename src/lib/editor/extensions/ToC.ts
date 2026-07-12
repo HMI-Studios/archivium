@@ -1,6 +1,42 @@
 import { Node, mergeAttributes, nodeInputRule } from '@tiptap/core'
+import { DOMSerializer, Node as PMNode } from '@tiptap/pm/model';
 import { TiptapContext } from '..';
 import { slugify } from './Heading';
+
+type HeadingEntry = { title: string, level: number };
+
+function computeLiveTocData(doc: PMNode): { headings: HeadingEntry[], scopedByPos: Map<number, HeadingEntry[]> } {
+  const headings: HeadingEntry[] = [];
+  const scopedByPos = new Map<number, HeadingEntry[]>();
+  const stack: { level: number, headings: HeadingEntry[], tocPositions: number[] }[] = [];
+
+  function closeSectionsAtOrAbove(level: number) {
+    while (stack.length && stack[stack.length - 1].level >= level) {
+      const section = stack.pop()!;
+      for (const pos of section.tocPositions) {
+        scopedByPos.set(pos, section.headings);
+      }
+    }
+  }
+
+  doc.descendants((node, pos) => {
+    if (node.type.name === 'heading') {
+      const level = node.attrs.level ?? 1;
+      const title = node.textContent;
+      closeSectionsAtOrAbove(level);
+      if (title) {
+        headings.push({ title, level });
+        for (const section of stack) section.headings.push({ title, level });
+      }
+      stack.push({ level, headings: [], tocPositions: [] });
+    } else if (node.type.name === 'toc' && stack.length > 0) {
+      stack[stack.length - 1].tocPositions.push(pos);
+    }
+  });
+
+  closeSectionsAtOrAbove(-Infinity);
+  return { headings, scopedByPos };
+}
 
 export interface ToCOptions {
   HTMLAttributes: Record<string, any>
@@ -60,21 +96,24 @@ const ToC = Node.create<ToCOptions>({
     return [{ tag: 'div#toc' }]
   },
 
-  renderHTML({ HTMLAttributes }) {
-    if (this.options.context) {
-      return [
-        'div',
-        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-        ['h3', {}, 'Table of Contents'],
-        generateToCDOM(this.options.context.headings),
-      ];
-    } else {
-      return [
-        'div',
-        mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-        ['h3', {}, 'Table of Contents'],
-      ];
+  addAttributes() {
+    return {
+      scopedHeadings: {
+        default: null,
+        rendered: false,
+      },
     }
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const headings = node.attrs.scopedHeadings ?? this.options.context?.headings;
+
+    return [
+      'div',
+      mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
+      ['h3', {}, 'Table of Contents'],
+      ...(headings ? [generateToCDOM(headings)] : []),
+    ];
   },
 
   addCommands() {
@@ -82,6 +121,43 @@ const ToC = Node.create<ToCOptions>({
       insertToC: () =>
         ({ commands }) => commands.insertContent({ type: this.name }),
     }
+  },
+
+  addNodeView() {
+    const options = this.options;
+    return ({ editor, getPos, HTMLAttributes }) => {
+      const dom = document.createElement('div');
+      const attrs = mergeAttributes(options.HTMLAttributes, HTMLAttributes);
+      for (const [key, value] of Object.entries(attrs)) {
+        if (value != null) dom.setAttribute(key, String(value));
+      }
+
+      const heading = document.createElement('h3');
+      heading.textContent = 'Table of Contents';
+      dom.appendChild(heading);
+
+      let listEl: HTMLElement | null = null;
+
+      const render = () => {
+        const pos = getPos();
+        if (pos === undefined) return;
+        const { headings, scopedByPos } = computeLiveTocData(editor.state.doc);
+        const list = scopedByPos.get(pos) ?? headings;
+        const rendered = DOMSerializer.renderSpec(document, generateToCDOM(list)).dom as HTMLElement;
+        if (listEl) dom.replaceChild(rendered, listEl);
+        else dom.appendChild(rendered);
+        listEl = rendered;
+      };
+
+      render();
+      editor.on('update', render);
+
+      return {
+        dom,
+        update: (updatedNode) => updatedNode.type.name === 'toc',
+        destroy: () => editor.off('update', render),
+      };
+    };
   },
 
   addInputRules() {

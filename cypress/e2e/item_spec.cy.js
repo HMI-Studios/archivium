@@ -43,6 +43,50 @@ describe('Item spec', () => {
     });
   });
 
+  it('typing a shorthand link to an existing item does not stay marked broken', () => {
+    cy.visit('/universes/public-test-universe/items/test-character?tab=body');
+    cy.intercept('GET', '/api/universes/public-test-universe/items/test-character').as('request');
+    cy.get('#action-bar').contains('Edit').click();
+    cy.wait('@request');
+    cy.get('.tiptap-editor .tiptap').should('be.visible');
+
+    cy.window().then((win) => {
+      const oldContent = win.document.querySelector('.tiptap-editor .tiptap').textContent;
+      cy.get('.tiptap-editor .tiptap').click().type('{ctrl}a{backspace}');
+      cy.get('.tiptap-editor .tiptap').type('See [the test event](@test-event) for more.');
+      cy.wait(600);
+
+      cy.get('.tiptap-editor .tiptap a').contains('the test event').should('not.have.class', 'link-broken');
+
+      cy.get('.tiptap-editor .tiptap').type('{ctrl}a{backspace}');
+      cy.get('.tiptap-editor .tiptap').type(oldContent);
+      cy.wait(600);
+      cy.get('#preview-btn').click();
+    });
+  });
+
+  it('typing a shorthand link to a nonexistent item stays marked broken', () => {
+    cy.visit('/universes/public-test-universe/items/test-character?tab=body');
+    cy.intercept('GET', '/api/universes/public-test-universe/items/test-character').as('request');
+    cy.get('#action-bar').contains('Edit').click();
+    cy.wait('@request');
+    cy.get('.tiptap-editor .tiptap').should('be.visible');
+
+    cy.window().then((win) => {
+      const oldContent = win.document.querySelector('.tiptap-editor .tiptap').textContent;
+      cy.get('.tiptap-editor .tiptap').click().type('{ctrl}a{backspace}');
+      cy.get('.tiptap-editor .tiptap').type('See [a made up item](@this-item-does-not-exist) for more.');
+      cy.wait(600);
+
+      cy.get('.tiptap-editor .tiptap a').contains('a made up item').should('have.class', 'link-broken');
+
+      cy.get('.tiptap-editor .tiptap').type('{ctrl}a{backspace}');
+      cy.get('.tiptap-editor .tiptap').type(oldContent);
+      cy.wait(600);
+      cy.get('#preview-btn').click();
+    });
+  });
+
   it('adds an event to the timline, then removes it', () => {
     cy.visit('/universes/public-test-universe/items/test-timeline?tab=timeline');
     cy.get('.timeline>.flex-col').children().should('have.length', timelineEvents);

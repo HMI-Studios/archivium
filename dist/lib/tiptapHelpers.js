@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.jsonToIndexed = jsonToIndexed;
+exports.getTextContent = getTextContent;
 exports.updateLinks = updateLinks;
 exports.indexedToJson = indexedToJson;
+exports.annotateTocScopes = annotateTocScopes;
 function cleanupMark(mark) {
     const newMark = { ...mark };
     if (newMark.type === 'link') {
@@ -45,8 +47,8 @@ function jsonToIndexed(doc) {
     const structure = (doc.content || []).map(walk);
     return { text: textBuffer, structure };
 }
-function _getTextContent(node) {
-    return `${node.text ?? ''}${(node.content ?? []).map(_getTextContent).join('')}`;
+function getTextContent(node) {
+    return `${node.text ?? ''}${(node.content ?? []).map(getTextContent).join('')}`;
 }
 /**
  * Mutates the provided IndexedDocument.
@@ -95,11 +97,40 @@ function indexedToJson(indexed, linkHandler, headingHandler) {
             combinedNode.content = node.content.map(walk);
         }
         if (node.type === 'heading' && headingHandler) {
-            const text = _getTextContent(combinedNode);
+            const text = getTextContent(combinedNode);
             if (text)
                 headingHandler(text, combinedNode.attrs?.level ?? 1);
         }
         return combinedNode;
     }
     return { type: 'doc', content: structure.map(walk) };
+}
+function annotateTocScopes(doc) {
+    const stack = [];
+    function closeSectionsAtOrAbove(level) {
+        while (stack.length && stack[stack.length - 1].level >= level) {
+            const section = stack.pop();
+            for (const tocNode of section.tocNodes) {
+                tocNode.attrs = { ...tocNode.attrs, scopedHeadings: section.headings };
+            }
+        }
+    }
+    function walk(node) {
+        if (node.type === 'heading') {
+            const level = node.attrs?.level ?? 1;
+            const title = getTextContent(node);
+            closeSectionsAtOrAbove(level);
+            if (title) {
+                for (const section of stack)
+                    section.headings.push({ title, level });
+            }
+            stack.push({ level, headings: [], tocNodes: [] });
+        }
+        else if (node.type === 'toc' && stack.length > 0) {
+            stack[stack.length - 1].tocNodes.push(node);
+        }
+        (node.content ?? []).forEach(walk);
+    }
+    walk(doc);
+    closeSectionsAtOrAbove(-Infinity);
 }

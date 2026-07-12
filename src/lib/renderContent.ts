@@ -4,7 +4,7 @@ import sanitizeHtml from 'sanitize-html';
 import api from '../api';
 import { universeLink } from '../templates';
 import { LinkData, TiptapContext, editorExtensions, extractLinkData } from './editor';
-import { IndexedDocument, indexedToJson } from './tiptapHelpers';
+import { annotateTocScopes, IndexedDocument, indexedToJson } from './tiptapHelpers';
 import logger from '../logger';
 
 
@@ -18,6 +18,7 @@ export async function tryRenderContent(req: Request, content: unknown, universeS
       (href) => links.push(extractLinkData(href)),
       (title, level) => headings.push({ title, level }),
     );
+    annotateTocScopes(jsonBody);
     const itemsPerUniverse = {};
     /* Because Tiptap rendering cannot be async, we extract the links we'll need to check ahead of time. */
     await Promise.all(links.map(async (link) => {
