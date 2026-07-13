@@ -45,11 +45,7 @@ block content
               if (response.status !== 200) {
                 select.value = select.form.init.value;
               } else {
-                select.form.init.value = select.value;
-                const invite = document.querySelector(`#invites [data-user=${select.form.username.value}]`);
-                if (invite || Number(select.value) === #{perms.NONE}) {
-                  window.location.reload();
-                }
+                window.location.reload();
               }
             }
           });

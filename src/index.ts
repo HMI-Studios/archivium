@@ -1,5 +1,6 @@
 import { ResultSetHeader } from 'mysql2/promise';
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import api from './api';
 import { render } from './templates';
@@ -26,6 +27,7 @@ import './hocuspocus';
 logger.info('Server starting...');
 
 const app = express();
+app.use(compression());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 

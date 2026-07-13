@@ -1,6 +1,6 @@
 import type { SetImageOptions } from '@tiptap/extension-image';
 import { Editor } from '@tiptap/react';
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router';
 import * as Y from 'yjs';
@@ -10,19 +10,21 @@ import { splitIgnoringQuotes } from '../../../src/lib/markdown';
 import { indexedToJson, jsonToIndexed } from '../../../src/lib/tiptapHelpers';
 import CustomDataEditor from '../components/CustomDataEditor';
 import EditorFrame from '../components/EditorFrame';
-import { FormPillList } from '../components/FormPillList';
 import { FormInput } from '../components/FormInput';
+import { FormPillList } from '../components/FormPillList';
 import { FormSelect } from '../components/FormSelect';
 import { FormSwitch } from '../components/FormSwitch';
-import Gallery from '../components/Gallery';
-import LineageEditor from '../components/LineageEditor';
-import MapEditor from '../components/MapEditor';
 import SaveBtn from '../components/SaveBtn';
 import TabsBar from '../components/TabsBar';
-import TimelineEditor from '../components/TimelineEditor';
 import { BulkExistsFetcher, capitalize, fetchData, T } from '../helpers';
 import { useProvider } from '../hooks/useProvider';
 import { useYState } from '../hooks/useYState';
+import ImageWithPreview from '../lib/ImageWithPreview';
+
+const Gallery = lazy(() => import(/* webpackChunkName: "tab-gallery" */ '../components/Gallery'));
+const LineageEditor = lazy(() => import(/* webpackChunkName: "tab-lineage" */ '../components/LineageEditor'));
+const MapEditor = lazy(() => import(/* webpackChunkName: "tab-map" */ '../components/MapEditor'));
+const TimelineEditor = lazy(() => import(/* webpackChunkName: "tab-timeline" */ '../components/TimelineEditor'));
 
 export type Categories = {
   [key: string]: [string, string],
@@ -112,6 +114,15 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
   const [editor, setEditor] = useState<Editor | null>(null);
 
+  const galleryPreviewsRef = useRef<Record<number, string>>({});
+  useEffect(() => {
+    const previews: Record<number, string> = {};
+    for (const img of item?.gallery ?? []) {
+      if (img.preview) previews[img.id] = img.preview;
+    }
+    galleryPreviewsRef.current = previews;
+  }, [item?.gallery]);
+
   const [provider, error, docUsers, docSelectors, setAwareness] = useProvider(providerAddress, `item/${universeShort}/${itemShort}`, ydoc);
 
   useEffect(() => {
@@ -119,7 +130,9 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
       const handleSync = async () => {
         syncItemExistsCache();
         const editor = new Editor({
-          extensions: editorExtensions(true, context, { ydoc, field: 'main', provider }),
+          extensions: editorExtensions(true, context, { ydoc, field: 'main', provider }, ImageWithPreview.configure({
+            getPreview: (id: number) => galleryPreviewsRef.current[id],
+          })),
           onUpdate: ({ editor }) => {
             const json = editor.getJSON();
             const indexed = jsonToIndexed(json);
@@ -531,9 +544,11 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
           </div>
 
           {currentTab && (
-            <div data-tab={currentTab}>
-              {tabs[currentTab]}
-            </div>
+            <Suspense fallback={<div className='loader' />}>
+              <div data-tab={currentTab}>
+                {tabs[currentTab]}
+              </div>
+            </Suspense>
           )}
         </div>}
       </div>

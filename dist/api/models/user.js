@@ -42,8 +42,8 @@ class UserImageAPI {
         if (!user)
             throw new errors_1.NotFoundError();
         let queryString = `
-      SELECT 
-        ui.user_id, image.name, image.mimetype, image.data
+      SELECT
+        ui.user_id, image.id, image.name, image.mimetype, image.data
       FROM userimage AS ui
       INNER JOIN image ON image.id = ui.image_id
       WHERE ui.user_id = ?;

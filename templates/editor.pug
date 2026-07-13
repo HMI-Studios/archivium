@@ -1,5 +1,9 @@
 extends layout.pug
 
+block append styles
+  if preloadChunk
+    link(rel='preload' as='script' href=`/static/editor/${preloadChunk}`)
+
 block append save
   li#save-btn.navbarBtn
   li#preview-btn.navbarBtn

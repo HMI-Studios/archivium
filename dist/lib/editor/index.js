@@ -56,7 +56,7 @@ function shorthandResolver(href, ctx) {
     }
     return { href };
 }
-const editorExtensions = (editMode, context, collabOptions) => {
+const editorExtensions = (editMode, context, collabOptions, imageExtension = Image_1.default) => {
     const extensions = [
         starter_kit_1.default.configure({
             link: false,
@@ -65,7 +65,7 @@ const editorExtensions = (editMode, context, collabOptions) => {
         }),
         Aside_1.default,
         Heading_1.default,
-        Image_1.default,
+        imageExtension,
         IFrame_1.default,
         Link_1.default.configure({
             enableClickSelection: editMode,

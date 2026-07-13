@@ -7,6 +7,7 @@ exports.Cond = exports.QueryBuilder = exports.parseData = exports.RollbackError 
 exports.executeQuery = executeQuery;
 exports.withTransaction = withTransaction;
 exports.getPfpUrl = getPfpUrl;
+exports.sendCachedImage = sendCachedImage;
 exports.handleAsNull = handleAsNull;
 exports.handleErrorWithData = handleErrorWithData;
 const db_1 = __importDefault(require("../db"));
@@ -262,6 +263,20 @@ class MultiCond extends Cond {
 }
 function getPfpUrl(user) {
     return user.hasPfp ? `/api/users/${user.username}/pfp` : `https://www.gravatar.com/avatar/${(0, md5_1.default)(user.email ?? '')}.jpg`;
+}
+function sendCachedImage(req, res, image, cacheKey, immutable) {
+    if (!image)
+        return undefined;
+    res.contentType(image.mimetype);
+    if (req.query.download === '1')
+        res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
+    res.setHeader('ETag', `"img-${cacheKey}"`);
+    res.setHeader('Cache-Control', immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
+    if (req.fresh) {
+        res.status(304).end();
+        return undefined;
+    }
+    return image.data;
 }
 function handleAsNull(type) {
     if (type instanceof Array) {

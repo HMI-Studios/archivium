@@ -2,6 +2,7 @@ import db from '../db';
 import _ from 'lodash';
 import md5 from 'md5';
 import logger from '../logger';
+import type { Request, Response } from 'express';
 import { PoolConnection, QueryResult, RowDataPacket } from 'mysql2/promise';
 import { ForbiddenError, NotFoundError, RequestError } from '../errors';
 import { User } from './models/user';
@@ -283,6 +284,21 @@ class MultiCond extends Cond {
 
 export function getPfpUrl(user: User) {
   return user.hasPfp ? `/api/users/${user.username}/pfp` : `https://www.gravatar.com/avatar/${md5(user.email ?? '')}.jpg`;
+}
+
+type CacheableImage = { mimetype: string, name: string, data?: Buffer };
+
+export function sendCachedImage(req: Request, res: Response, image: CacheableImage | undefined, cacheKey: string | number, immutable: boolean): Buffer | undefined {
+  if (!image) return undefined;
+  res.contentType(image.mimetype);
+  if (req.query.download === '1') res.setHeader('Content-Disposition', `attachment; filename="${image.name}"`);
+  res.setHeader('ETag', `"img-${cacheKey}"`);
+  res.setHeader('Cache-Control', immutable ? 'public, max-age=31536000, immutable' : 'no-cache');
+  if (req.fresh) {
+    res.status(304).end();
+    return undefined;
+  }
+  return image.data;
 }
 
 export function handleAsNull(type: typeof RequestError | (typeof RequestError)[]) {

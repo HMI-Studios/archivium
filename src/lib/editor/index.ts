@@ -75,7 +75,7 @@ export function shorthandResolver(href: string, ctx: TiptapContext | undefined):
   return { href };
 }
 
-export const editorExtensions = (editMode: boolean, context?: TiptapContext, collabOptions?: { ydoc: Y.Doc, field?: string, provider: HocuspocusProvider }) => {
+export const editorExtensions = (editMode: boolean, context?: TiptapContext, collabOptions?: { ydoc: Y.Doc, field?: string, provider: HocuspocusProvider }, imageExtension: Extendable = Image) => {
   const extensions: Extendable[] = [
     StarterKit.configure({
       link: false,
@@ -84,7 +84,7 @@ export const editorExtensions = (editMode: boolean, context?: TiptapContext, col
     }),
     Aside,
     Heading,
-    Image,
+    imageExtension,
     IFrame,
     Link.configure({
       enableClickSelection: editMode,
