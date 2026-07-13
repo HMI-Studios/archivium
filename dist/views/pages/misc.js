@@ -11,11 +11,7 @@ const embedding_1 = __importDefault(require("../../embedding"));
 const errors_1 = require("../../errors");
 const logger_1 = __importDefault(require("../../logger"));
 const staticDir = path_1.default.join(__dirname, '../../static');
-/**
- * Finds the current content-hashed filename for a lazy-loaded editor chunk
- * (e.g. 'item-edit' -> 'item-edit.<hash>.chunk.js'), so the page can preload
- * it instead of waiting for the bundle to run and discover it needs it.
- */
+// Find the bundle chunk for the current editor page to preload it
 async function findEditorChunk(prefix) {
     const files = await promises_1.default.readdir(path_1.default.join(staticDir, 'editor')).catch(() => []);
     return files.find((file) => new RegExp(`^${prefix}\\.[a-f0-9]+\\.chunk\\.js$`).test(file)) ?? null;
@@ -120,6 +116,9 @@ exports.default = {
         }
         else if (params[0] === 'stories' && params[2]) {
             data.preloadChunk = await findEditorChunk('chapter-edit');
+        }
+        else if (params[0] === 'notes' && params[1]) {
+            data.preloadChunk = await findEditorChunk('note-edit');
         }
         res.prepareRender('editor', data);
     }

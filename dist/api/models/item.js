@@ -8,6 +8,7 @@ const buffer_image_size_1 = __importDefault(require("buffer-image-size"));
 const __1 = __importDefault(require(".."));
 const errors_1 = require("../../errors");
 const editor_1 = require("../../lib/editor");
+const imagePreview_1 = require("../../lib/imagePreview");
 const tiptapHelpers_1 = require("../../lib/tiptapHelpers");
 const utils_1 = require("../utils");
 const utils_2 = require("../../lib/utils");
@@ -94,6 +95,7 @@ class MapImageAPI {
         }
         const { originalname, buffer, mimetype } = file;
         const { width, height } = (0, buffer_image_size_1.default)(buffer);
+        const preview = await (0, imagePreview_1.generatePreview)(buffer);
         const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
         const existingImage = await this.getOneByItem(item).catch((0, utils_1.handleAsNull)(errors_1.NotFoundError));
         let data;
@@ -105,7 +107,7 @@ class MapImageAPI {
                 const { insertId } = await (0, utils_1.executeQuery)('INSERT INTO map (item_id) VALUES (?)', [item.id], conn);
                 map = { id: insertId };
             }
-            [data] = await conn.execute('INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)', [originalname.substring(0, 64), mimetype, buffer]);
+            [data] = await conn.execute('INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)', [originalname.substring(0, 64), mimetype, buffer, preview]);
             await conn.execute('UPDATE map SET image_id = ?, width = ?, height = ? WHERE id = ?', [data.insertId, width, height, map.id]);
             if (existingImage) {
                 await conn.execute(`DELETE FROM image WHERE id = ?`, [existingImage.id]);
@@ -168,10 +170,11 @@ class ItemImageAPI {
             throw new errors_1.InsufficientStorageError();
         }
         const { originalname, buffer, mimetype } = file;
+        const preview = await (0, imagePreview_1.generatePreview)(buffer);
         const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, utils_1.perms.WRITE, true);
         let data;
         await (0, utils_1.withTransaction)(async (conn) => {
-            [data] = await conn.execute(`INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`, [originalname.substring(0, 64), mimetype, buffer]);
+            [data] = await conn.execute(`INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)`, [originalname.substring(0, 64), mimetype, buffer, preview]);
             await conn.execute(`INSERT INTO itemimage (item_id, image_id, label, idx) VALUES (?, ?, ?, ?)`, [item.id, data.insertId, '', 0]);
         });
         return data;
@@ -251,7 +254,7 @@ class ItemAPI {
         item.events = events;
         const map = (await (0, utils_1.executeQuery)(`
       SELECT
-        map.id, map.width, map.height, map.image_id,
+        map.id, map.width, map.height, map.image_id, mapimage.preview,
         JSON_ARRAYAGG(JSON_OBJECT(
           'id', loc.id,
           'title', loc.title,
@@ -262,6 +265,7 @@ class ItemAPI {
           'y', loc.y
         )) as locations
       FROM map
+      LEFT JOIN image AS mapimage ON mapimage.id = map.image_id
       LEFT JOIN maplocation AS loc ON loc.map_id = map.id
       LEFT JOIN item ON item.id = loc.item_id
       LEFT JOIN universe ON universe.id = item.universe_id
@@ -271,16 +275,18 @@ class ItemAPI {
         if (map?.locations.length === 1 && map.locations[0].id === null) {
             map.locations = [];
         }
+        if (map)
+            map.preview = (0, imagePreview_1.previewToDataUri)(map.preview);
         item.map = map;
         const gallery = await (0, utils_1.executeQuery)(`
       SELECT
-        image.id, image.name, itemimage.label
+        image.id, image.name, itemimage.label, image.preview
       FROM itemimage
       INNER JOIN image ON image.id = itemimage.image_id
       WHERE itemimage.item_id = ?
       ORDER BY itemimage.idx
     `, [item.id]);
-        item.gallery = gallery;
+        item.gallery = gallery.map((img) => ({ ...img, preview: (0, imagePreview_1.previewToDataUri)(img.preview) }));
         [item.parents, item.children] = await this.getLineage(item);
         const links = await (0, utils_1.executeQuery)(`
       SELECT DISTINCT item.id, item.shortname, item.title, universe.shortname AS universe_short

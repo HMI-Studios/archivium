@@ -2,7 +2,7 @@ import db from '../db';
 import _ from 'lodash';
 import md5 from 'md5';
 import logger from '../logger';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { PoolConnection, QueryResult, RowDataPacket } from 'mysql2/promise';
 import { ForbiddenError, NotFoundError, RequestError } from '../errors';
 import { User } from './models/user';

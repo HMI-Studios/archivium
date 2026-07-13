@@ -119,6 +119,8 @@ export default {
       data.preloadChunk = await findEditorChunk('item-edit');
     } else if (params[0] === 'stories' && params[2]) {
       data.preloadChunk = await findEditorChunk('chapter-edit');
+    } else if (params[0] === 'notes' && params[1]) {
+      data.preloadChunk = await findEditorChunk('note-edit');
     }
 
     res.prepareRender('editor', data);
