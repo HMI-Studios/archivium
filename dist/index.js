@@ -68,6 +68,8 @@ const upload = (0, multer_1.default)({
 node_cron_1.default.schedule('0 0 * * *', () => {
     logger_1.default.info('Purging stale sessions...');
     api_1.default.session.purge().then(({ affectedRows }) => logger_1.default.info(`Purged ${affectedRows} sessions`));
+    logger_1.default.info('Purging expired OAuth codes/tokens...');
+    api_1.default.oauth.purge();
     logger_1.default.info('Running daily DB export...');
     (0, backup_1.default)();
 });
@@ -100,6 +102,9 @@ const routes_1 = __importDefault(require("./api/routes"));
 const utils_1 = require("./api/utils");
 const errors_1 = require("./errors");
 (0, routes_1.default)(app, upload);
+// Load MCP server
+const mcp_1 = __importDefault(require("./mcp"));
+(0, mcp_1.default)(app);
 /*
   ACCOUNT ROUTES
 */

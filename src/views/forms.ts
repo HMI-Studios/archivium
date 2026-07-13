@@ -31,6 +31,9 @@ export default {
         is_public: req.body.visibility === 'public',
         discussion_enabled: req.body.discussion_enabled === 'enabled',
         discussion_open: req.body.discussion_open === 'enabled',
+        mcp_items_enabled: req.body.mcp_items_enabled === 'on',
+        mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
+        mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
       });
       res.status(201);
       return res.redirect(`${universeLink(req, req.body.shortname)}/`);
@@ -50,6 +53,9 @@ export default {
       is_public: req.body.visibility === 'public',
       discussion_enabled: req.body.discussion_enabled === 'enabled',
       discussion_open: req.body.discussion_open === 'enabled',
+      mcp_items_enabled: req.body.mcp_items_enabled === 'on',
+      mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
+      mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
     }
     try {
       // TODO we need to fix this type nonsense...

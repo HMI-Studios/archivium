@@ -46,6 +46,9 @@ cron.schedule('0 0 * * *', () => {
   logger.info('Purging stale sessions...');
   api.session.purge().then(({ affectedRows }) => logger.info(`Purged ${affectedRows} sessions`));
 
+  logger.info('Purging expired OAuth codes/tokens...');
+  api.oauth.purge();
+
   logger.info('Running daily DB export...');
   backup();
 });
@@ -76,6 +79,10 @@ app.use(`${ADDR_PREFIX}/notifworker.js`, express.static(path.join(__dirname, 'st
 
 // Serve static assets
 app.use(`${ADDR_PREFIX}/static`, express.static(path.join(__dirname, 'static/')));
+
+// Load MCP server
+import loadMcp from './mcp';
+loadMcp(app);
 
 // Load view routes
 import loadViews from './views';
