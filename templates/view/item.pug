@@ -355,25 +355,35 @@ block content
         else
           .markdown #{renderedBody.content}
 
-  if item.obj_data.comments
-    h2 #{T('Comments')}
-    div
-      -
-        const canComment = contextUser && universe.discussion_enabled && (
-          (universe.is_public && universe.discussion_open)
-          || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
-        );
-        const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;
-        const apiRoute = `/api/universes/${universe.shortname}/items/${item.shortname}/comments`;
-        const universeShortname = universe.shortname;
-      if !universe.discussion_enabled
-        .center
-          .ma-auto.my-2(style={ 'max-width': '32rem' })
-            small
-              i #{T(`Discussion and comments is disabled for ${universe.title}.`)}
-                |  #{T('To allow leaving comments, enable discussion on the ')}
-                a.link.link-animated(href=`${universeLink(universe.shortname)}/edit`) #{T('universe edit page')}.
-      include ../components/comments.pug
+  -
+    const showComments = !!item.obj_data.comments;
+    const showRelatedItems = relatedItems && relatedItems.length > 0;
+  if showComments || showRelatedItems
+    .related-comments-grid(class={ 'single-column': !showComments || !showRelatedItems })
+      if showComments
+        div
+          h2 #{T('Comments')}
+          div
+            -
+              const canComment = contextUser && universe.discussion_enabled && (
+                (universe.is_public && universe.discussion_open)
+                || (universe.author_permissions[contextUser.id] >= (universe.discussion_open ? perms.READ : perms.COMMENT))
+              );
+              const canDelete = contextUser && universe.author_permissions[contextUser.id] >= perms.ADMIN;
+              const apiRoute = `/api/universes/${universe.shortname}/items/${item.shortname}/comments`;
+              const universeShortname = universe.shortname;
+            if !universe.discussion_enabled
+              .center
+                .ma-auto.my-2(style={ 'max-width': '32rem' })
+                  small
+                    i #{T(`Discussion and comments is disabled for ${universe.title}.`)}
+                      |  #{T('To allow leaving comments, enable discussion on the ')}
+                      a.link.link-animated(href=`${universeLink(universe.shortname)}/edit`) #{T('universe edit page')}.
+            include ../components/comments.pug
+      if showRelatedItems
+        div
+          h2 #{T('Related Items')}
+          include ../components/relatedItems.pug
 
   script.
     (() => {

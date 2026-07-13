@@ -1,15 +1,15 @@
 import { Express, Handler, Request, Response } from 'express';
-import { ADDR_PREFIX } from '../config';
-import Auth from '../middleware/auth';
-import api from '.';
-import logger from '../logger';
-import { perms, executeQuery, getPfpUrl, handleAsNull } from './utils';
 import { Multer } from 'multer';
-import { Note } from './models/note';
-import { User } from './models/user';
+import api from '.';
+import { ADDR_PREFIX } from '../config';
+import embedder from '../embedding';
 import { NotFoundError } from '../errors';
-import { Session } from './models/session';
 import { tryRenderContent } from '../lib/renderContent';
+import logger from '../logger';
+import { Note } from './models/note';
+import { Session } from './models/session';
+import { User } from './models/user';
+import { handleAsNull, perms } from './utils';
 
 type RouteMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export type APIRouteHandler = (req: Request<{ [key: string]: string }>, res: Response) => Promise<any>;
@@ -383,6 +383,12 @@ export default function (app: Express, upload: Multer) {
           }),
       }),
     ]),
+    new APIRoute('/semantic-search', {
+      GET: async (req) => embedder.search(req.session.user, {
+        ...req.query,
+        query: (req.query.q ?? '') as string,
+      }),
+    }),
     new APIRoute('/writable-items', {
       GET: async (req) => api.item.getMany(req.session.user, null, perms.WRITE),
     }),

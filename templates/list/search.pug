@@ -75,13 +75,15 @@ block content
               else
                 span #
                   +highlight(itemTag, search)
-        
+
         if item.snippet
           .row-2(style={ 'grid-column': '1 / 3' })
             small
               i
                 - const snippet = item.snippet
                 +highlight(formatSnippet(snippet, item.match_pos >= 50, snippet.length === 100), search)
+                if item.semantic
+                  |  (#{T('semantic match')})
     each note in notes
       .card.sheet.gap-4.align-start(data-goto=`/notes?note=${note.uuid}`)
         .d-flex.flex-col.grow-1
@@ -90,10 +92,10 @@ block content
               +highlight(note.title, search, true)
 
         .d-flex.flex-col.grow-3
-            span 
+            span
               b #{T('Created')}: 
               | #{formatDate(note.created_at)}
-            span 
+            span
               b #{T('Updated')}: 
               | #{formatDate(note.updated_at)}
 
@@ -105,7 +107,7 @@ block content
               else
                 span #
                   +highlight(noteTag, search)
-        
+
         if note.snippet
           .row-2(style={ 'grid-column': '1 / 3' })
             small

@@ -1,10 +1,11 @@
 import { PoolConnection, QueryResult, ResultSetHeader } from 'mysql2/promise';
 import { API } from '..';
+import embedder from '../../embedding';
 import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
+import { IndexedDocument } from '../../lib/tiptapHelpers';
 import { BaseOptions, Tier, executeQuery, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
 import { Item, ItemEvent } from './item';
 import { User } from './user';
-import { IndexedDocument } from '../../lib/tiptapHelpers';
 
 export type UniverseAccessRequest<T = boolean> = {
   universe_id: number,
@@ -101,7 +102,7 @@ export class UniverseAPI {
     const permsQueryString = `${readOnlyQueryString}${(readOnlyQueryString && usrQueryString) ? ' OR ' : ''}${usrQueryString}`;
     const conditionString = conditions ? `WHERE ${conditions.strings.join(' AND ')}` : '';
     const queryString = `
-      SELECT 
+      SELECT
         universe.*,
         JSON_OBJECTAGG(author.id, author.username) AS authors,
         JSON_OBJECTAGG(author.id, au.permission_level) AS author_permissions,
@@ -519,5 +520,7 @@ export class UniverseAPI {
       `, [universe.id]);
       await conn.execute(`DELETE FROM universe WHERE id = ?;`, [universe.id]);
     });
+
+    await embedder.deleteForUniverse(universe.id);
   }
 }

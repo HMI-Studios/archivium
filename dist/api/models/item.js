@@ -11,6 +11,7 @@ const editor_1 = require("../../lib/editor");
 const tiptapHelpers_1 = require("../../lib/tiptapHelpers");
 const utils_1 = require("../utils");
 const utils_2 = require("../../lib/utils");
+const embedding_1 = __importDefault(require("../../embedding"));
 function getQuery(selects = [], permsCond, whereConds, options = {}) {
     const query = new utils_1.QueryBuilder()
         .select('item.id')
@@ -570,6 +571,10 @@ class ItemAPI {
             if (!data) {
                 throw new errors_1.ModelError('Failed to insert item');
             }
+            // TODO more type nonsense
+            if (universe.obj_data.semanticSearchEnabled) {
+                embedding_1.default.addJob({ type: 'check', itemId: data.insertId });
+            }
             return data;
         }
         catch (err) {
@@ -762,6 +767,14 @@ class ItemAPI {
                 this.markUpdated(item.id, conn);
             }
         });
+        const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShortname });
+        // TODO more type nonsense
+        if (universe.obj_data.semanticSearchEnabled) {
+            embedding_1.default.addJob({
+                type: 'check',
+                itemId: item.id,
+            });
+        }
         return item.id;
     }
     async insertMap(itemId, map, conn) {
@@ -1165,6 +1178,7 @@ class ItemAPI {
         `, [item.id]);
             await conn.execute(`DELETE FROM item WHERE id = ?;`, [item.id]);
         });
+        await embedding_1.default.deleteForItem(item.id);
     }
 }
 exports.ItemAPI = ItemAPI;

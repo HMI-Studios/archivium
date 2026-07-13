@@ -377,6 +377,23 @@ header {
   }
 }
 
+.related-comments-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.related-comments-grid.single-column {
+  grid-template-columns: 1fr;
+}
+
+@media only screen and (max-width: 900px) {
+  .related-comments-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .card {
   box-shadow: 0 0.25rem 0.5rem 0 rgb(0 0 0 / 20%);
   transition: box-shadow 0.3s, top 0.2s;

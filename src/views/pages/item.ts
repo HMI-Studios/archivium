@@ -9,6 +9,7 @@ import { ForbiddenError, NotFoundError } from '../../errors';
 import { FamilyTreeLayout, layoutFamilyTree } from '../../lib/familyTree';
 import { RenderedBody, tryRenderContent } from '../../lib/renderContent';
 import { universeLink } from '../../templates';
+import embedder from '../../embedding';
 
 export default {
   async list(req, res) {
@@ -97,11 +98,18 @@ export default {
       noteAuthors[user.id] = user;
     }
 
+    const relatedItems = (universe.obj_data as any).semanticSearchEnabled
+      ? (await embedder.getRelatedItems(req.session.user, item.id, universe.id)).map(relatedItem => ({
+        ...relatedItem,
+        itemTypeName: ((universe.obj_data['cats'] ?? {})[relatedItem.item_type] ?? ['Missing Category'])[0],
+      }))
+      : [];
+
     res.prepareRender('item', {
       item, universe, tab: req.query.tab, comments, commenters, notes, noteAuthors, renderedBody,
       commentAction: `${universeLink(req, universe.shortname)}/items/${item.shortname}/comment`,
       noteBaseRoute: `/api/universes/${universe.shortname}/items/${item.shortname}/notes`,
-      family, familyLayout,
+      family, familyLayout, relatedItems,
     });
   },
 

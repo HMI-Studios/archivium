@@ -84,10 +84,16 @@ block content
     .inputGroup
       label #{T('Stories enabled')}:
       label.switch
-        input#stories-enabled(type='checkbox' onChange='updateStoriesEnabled()' checked=Boolean(universe.obj_data.storiesEnabled))
+        input#stories-enabled(type='checkbox' checked=Boolean(universe.obj_data.storiesEnabled))
         span.slider
 
     if universe.tier >= tiers.PREMIUM
+      .inputGroup
+        label #{T('Semantic search enabled')}:
+        label.switch
+          input#semantic-search-enabled(type='checkbox' checked=Boolean(universe.obj_data.semanticSearchEnabled))
+          span.slider
+
       .inputGroup
         label #{T('Theme')}:
         select#theme
@@ -149,6 +155,11 @@ block content
 
     if universe.tier >= tiers.PREMIUM
       script.
+        const semanticSearchEnabled = document.querySelector('#semantic-search-enabled');
+        semanticSearchEnabled.addEventListener('change', () => {
+          updateObjData({ semanticSearchEnabled: semanticSearchEnabled.checked });
+        });
+
         const theme = document.querySelector('#theme');
         const glass = document.querySelector('#glass');
         const backgroundImage = document.querySelector('#backgroundImage');

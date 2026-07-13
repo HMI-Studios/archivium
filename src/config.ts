@@ -6,6 +6,7 @@ function formatEnv(env) {
   env.HOCUSPOCUS_PORT = Number(env.HOCUSPOCUS_PORT);
   env.DEV_MODE = env.DEV_MODE === 'true';
   env.WEB_PUSH_ENABLED = env.WEB_PUSH_ENABLED === 'true';
+  env.QDRANT_URL = env.QDRANT_URL || 'http://localhost:6333';
   return env;
 }
 
@@ -20,6 +21,9 @@ export const {
   MAILERSEND_API_KEY,
   OPENAI_API_KEY,
   RECAPTCHA_KEY,
+  LMSTER_KEY,
+  EMBEDDING_API_URL,
+  QDRANT_URL,
   ARCHIVIUM_DB_HOST,
   ARCHIVIUM_DB_USER,
   ARCHIVIUM_DB_PASSWORD,

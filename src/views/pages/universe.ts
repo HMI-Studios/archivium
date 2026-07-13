@@ -1,13 +1,13 @@
-import { ADDR_PREFIX } from '../../config';
-import api from '../../api';
-import { universeLink } from '../../templates';
-import { perms, getPfpUrl, tierAllowance, tierLimits, handleAsNull } from '../../api/utils';
-import logger from '../../logger';
 import { RouteHandler } from '..';
-import { ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors';
+import api from '../../api';
 import { Comment } from '../../api/models/discussion';
 import { User } from '../../api/models/user';
+import { getPfpUrl, handleAsNull, perms, tierLimits } from '../../api/utils';
+import { ADDR_PREFIX } from '../../config';
+import embedder from '../../embedding';
+import { ForbiddenError, NotFoundError, UnauthorizedError } from '../../errors';
 import { tryRenderContent } from '../../lib/renderContent';
+import { universeLink } from '../../templates';
 
 export default {
   async list(req, res) {
@@ -153,8 +153,9 @@ export default {
     }
 
     const totalStoredImages = await api.universe.getTotalStoredByShortname(universe.shortname);
+    const embeddingStats = await embedder.getStatsForUniverse(universe.id);
 
-    res.prepareRender('universeAdmin', { universe, requests, invites, ownerCount, totalStoredImages, tierLimits: tierLimits[universe.tier ?? 0] });
+    res.prepareRender('universeAdmin', { universe, requests, invites, ownerCount, totalStoredImages, embeddingStats, tierLimits: tierLimits[universe.tier ?? 0] });
   },
 
   async stats(req, res) {

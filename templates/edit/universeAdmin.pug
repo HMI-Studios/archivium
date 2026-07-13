@@ -100,7 +100,7 @@ block content
           .d-flex.nowrap.gap-1.align-center(data-user=invite.username)
             span
               a.link.link-animated(href=`${ADDR_PREFIX}/users/${invite.username}`) #{invite.username}
-              |  was invited with  
+              |  was invited with 
               b #{T(`perms_${invite.permission_level}`).toLowerCase()}
               |  permissions.
             button(
@@ -118,7 +118,7 @@ block content
           .d-flex.nowrap.gap-1.align-center
             span
               a.link.link-animated(href=`${ADDR_PREFIX}/users/${request.username}`) #{request.username}
-              |  is requesting  
+              |  is requesting 
               b #{T(`perms_${request.permission_level}`).toLowerCase()}
               |  permissions.
             button(
@@ -133,7 +133,21 @@ block content
             ) #{T('Deny')}
 
     .itemTab.hidden.flex-col(data-tab='storage')
-      .big-text
-        p
-          b #{T('Images Stored')}: 
-          | #{formatBytes(totalStoredImages)} / #{formatBytes(tierLimits.images)}
+      h2 #{T('Images')}
+      ul
+        li
+          b #{T('Images Stored')}:
+          |  #{formatBytes(totalStoredImages)} / #{formatBytes(tierLimits.images)}
+
+      if universe.tier >= tiers.PREMIUM || embeddingStats.chunkCount > 0
+        h2 #{T('Semantic Search')}
+        ul
+          li
+            b #{T('Embedded Chunks')}:
+            |  #{embeddingStats.chunkCount}
+          li
+            b #{T('Items With Embedded Content')}:
+            |  #{embeddingStats.itemCount}
+          li
+            b #{T('Estimated Vector Storage')}:
+            |  ~#{formatBytes(embeddingStats.estimatedBytes)}

@@ -1,6 +1,10 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UniverseAPI = void 0;
+const embedding_1 = __importDefault(require("../../embedding"));
 const errors_1 = require("../../errors");
 const utils_1 = require("../utils");
 const validateShortname = (shortname, reservedShortnames = ['create', 'news', '_home', '_public']) => {
@@ -65,7 +69,7 @@ class UniverseAPI {
         const permsQueryString = `${readOnlyQueryString}${(readOnlyQueryString && usrQueryString) ? ' OR ' : ''}${usrQueryString}`;
         const conditionString = conditions ? `WHERE ${conditions.strings.join(' AND ')}` : '';
         const queryString = `
-      SELECT 
+      SELECT
         universe.*,
         JSON_OBJECTAGG(author.id, author.username) AS authors,
         JSON_OBJECTAGG(author.id, au.permission_level) AS author_permissions,
@@ -431,6 +435,7 @@ class UniverseAPI {
       `, [universe.id]);
             await conn.execute(`DELETE FROM universe WHERE id = ?;`, [universe.id]);
         });
+        await embedding_1.default.deleteForUniverse(universe.id);
     }
 }
 exports.UniverseAPI = UniverseAPI;

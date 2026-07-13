@@ -1,0 +1,13 @@
+.d-flex.flex-col.gap-2
+  each relatedItem in relatedItems
+    -
+      const relatedItemLink = systemDisplayModes.includes(displayUniverse)
+        ? `/${displayUniverse}/${relatedItem.shortname}`
+        : `${universeLink(relatedItem.universe_short)}/items/${relatedItem.shortname}`;
+    .card.sheet.d-flex.flex-col.align-start.gap-1(data-goto=relatedItemLink)
+      a.link.link-animated(href=relatedItemLink)
+        b #{relatedItem.title}
+      small
+        a.filter.link.link-animated(
+          href=`${systemDisplayModes.includes(displayUniverse) ? `/${displayUniverse}` : `${universeLink(relatedItem.universe_short)}/items`}?type=${relatedItem.item_type}`
+        ) #{capitalize(T(relatedItem.itemTypeName))}

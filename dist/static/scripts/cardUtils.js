@@ -4,7 +4,7 @@
   }
 
   window.addEventListener('load', () => {
-    document.querySelectorAll('.card-list .card[data-goto]').forEach(el => {
+    document.querySelectorAll('.card[data-goto]').forEach(el => {
       el.addEventListener('click', () => {
         goTo(el.dataset.goto);
       });
