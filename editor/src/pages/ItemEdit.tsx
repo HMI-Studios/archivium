@@ -100,6 +100,7 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
   const itemMapRef = useRef<Record<string, ItemOptionEntry>>({});
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const context: TiptapContext = {
     currentUniverse: universeShort,
@@ -149,71 +150,78 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
 
   useEffect(() => {
     if (provider && editor) {
-      const categoryPromise = fetchData(`/api/universes/${universeShort}`, (data) => {
-        setCategories(data.obj_data.cats);
-      });
-      const eventItemPromise = fetchData(`/api/universes/${universeShort}/events`, (events) => {
-        const newEventItemMap: Record<number, EventItem[]> = {};
-        for (const { src_id, src_title, src_shortname, event_title, abstime } of events) {
-          if (!(src_id in newEventItemMap)) {
-            newEventItemMap[src_id] = [];
+      const loadData = async () => {
+        const categoryPromise = fetchData(`/api/universes/${universeShort}`, (data) => {
+          setCategories(data.obj_data.cats);
+        });
+        const eventItemPromise = fetchData(`/api/universes/${universeShort}/events`, (events) => {
+          const newEventItemMap: Record<number, EventItem[]> = {};
+          for (const { src_id, src_title, src_shortname, event_title, abstime } of events) {
+            if (!(src_id in newEventItemMap)) {
+              newEventItemMap[src_id] = [];
+            }
+            newEventItemMap[src_id].push([src_shortname as string, src_title as string, Number(src_id), event_title ?? '', Number(abstime)]);
           }
-          newEventItemMap[src_id].push([src_shortname as string, src_title as string, Number(src_id), event_title ?? '', Number(abstime)]);
-        }
-        setEventItemMap(newEventItemMap);
-      });
-      const itemMapPromise = fetchData(`/api/universes/${universeShort}/items`, (items) => {
-        const newItemMap: Record<number, ItemOptionEntry> = {};
-        for (const { shortname, title, item_type, tags } of items) {
-          if (shortname === itemShort) continue;
-          newItemMap[shortname] = { title, type: item_type, tags: tags ?? [] };
-        }
-        itemMapRef.current = newItemMap;
-        setItemMap(newItemMap);
-      });
+          setEventItemMap(newEventItemMap);
+        });
+        const itemMapPromise = fetchData(`/api/universes/${universeShort}/items`, (items) => {
+          const newItemMap: Record<number, ItemOptionEntry> = {};
+          for (const { shortname, title, item_type, tags } of items) {
+            if (shortname === itemShort) continue;
+            newItemMap[shortname] = { title, type: item_type, tags: tags ?? [] };
+          }
+          itemMapRef.current = newItemMap;
+          setItemMap(newItemMap);
+        });
 
-      Promise.all([categoryPromise, eventItemPromise, itemMapPromise]).then(async () => {
-        // The editor doesn't get created until the provider syncs, so we're guaranteed to be synced here
-        if (!ydoc.getMap('config').get('initialContentLoading')) {
-          ydoc.getMap('config').set('initialContentLoading', true);
+        await Promise.all([categoryPromise, eventItemPromise, itemMapPromise]).then(async () => {
+          // The editor doesn't get created until the provider syncs, so we're guaranteed to be synced here
+          if (!ydoc.getMap('config').get('initialContentLoading')) {
+            ydoc.getMap('config').set('initialContentLoading', true);
 
-          await fetchData(`/api/universes/${universeShort}/items/${itemShort}`, async (data: Item) => {
-            const objData = data.obj_data;
-            let initialContent: Object | null = null;
-            if (objData.body) {
-              const links: LinkData[] = [];
-              initialContent = indexedToJson(objData.body, (href) => links.push(extractLinkData(href)));
-              const bulkFetcher = new BulkExistsFetcher();
-              const fetchPromises = links.map(async (link) => {
-                if (link.item) {
-                  const universe = link.universe ?? universeShort;
-                  if (!(universe in itemExistsCache)) {
-                    itemExistsCache[universe] = {};
+            await fetchData(`/api/universes/${universeShort}/items/${itemShort}`, async (data: Item) => {
+              const objData = data.obj_data;
+              let initialContent: Object | null = null;
+              if (objData.body) {
+                const links: LinkData[] = [];
+                initialContent = indexedToJson(objData.body, (href) => links.push(extractLinkData(href)));
+                const bulkFetcher = new BulkExistsFetcher();
+                const fetchPromises = links.map(async (link) => {
+                  if (link.item) {
+                    const universe = link.universe ?? universeShort;
+                    if (!(universe in itemExistsCache)) {
+                      itemExistsCache[universe] = {};
+                    }
+                    if (!(link.item in itemExistsCache[universe])) {
+                      itemExistsCache[universe][link.item] = await bulkFetcher.exists(universe, link.item);
+                    }
                   }
-                  if (!(link.item in itemExistsCache[universe])) {
-                    itemExistsCache[universe][link.item] = await bulkFetcher.exists(universe, link.item);
-                  }
-                }
-              });
-              bulkFetcher.fetchAll();
-              await Promise.all(fetchPromises);
-              ydoc.getMap('config').set('itemExistsCache', itemExistsCache);
-            }
-            // delete data.obj_data;
+                });
+                bulkFetcher.fetchAll();
+                await Promise.all(fetchPromises);
+                ydoc.getMap('config').set('itemExistsCache', itemExistsCache);
+              }
+              // delete data.obj_data;
 
-            if (ydoc.getMap('config').get('initialContentLoaded')) {
-              // Someone else beat us to loading it first, return
-              return;
-            }
-            ydoc.getMap('config').set('initialContentLoaded', true);
+              if (ydoc.getMap('config').get('initialContentLoaded')) {
+                // Someone else beat us to loading it first, return
+                return;
+              }
+              ydoc.getMap('config').set('initialContentLoaded', true);
 
-            if (initialContent) {
-              editor.commands.setContent(initialContent);
-            }
-            setItem(data);
-            setObjData(objData);
-          });
-        }
+              if (initialContent) {
+                editor.commands.setContent(initialContent);
+              }
+              setItem(data);
+              setObjData(objData);
+            });
+          }
+          setLoading(false);
+        });
+      };
+
+      loadData().catch(() => {
+        setLoadError(T('Failed to load item data'));
         setLoading(false);
       });
     }
@@ -268,10 +276,10 @@ export default function ItemEdit({ universeLink, providerAddress }: ItemEditProp
   }
 
   /* Error Screen */
-  if (error) {
+  if (error || loadError) {
     return <div className='d-flex justify-center align-center'>
       <div className='d-flex flex-col align-center gap-2' style={{ marginTop: 'max(0px, calc(50vh - 50px - var(--page-margin-top)))' }}>
-        <span className='color-error big-text'>{error}</span>
+        <span className='color-error big-text'>{error ?? loadError}</span>
         <button className='px-2' onClick={() => location.reload()}>Reload</button>
         <button
           className='px-2'

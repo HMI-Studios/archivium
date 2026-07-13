@@ -102,7 +102,7 @@ export async function fetchAsync(url: string): Promise<any> {
       'Accept': 'application/json',
     },
   });
-  if (!res.ok) throw new Error('Failed to fetch');
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
   const data = await res.json();
   return data;
 }
