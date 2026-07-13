@@ -27,10 +27,16 @@ block content
             | The page you're looking for doesn't seem to exist. If you believe it should, contact the 
             a.link.link-animated( href="mailto:contact@archivium.net" ) site&nbsp;admin
             | .
+          when 413
+            | The amount of data you're trying to save is simply too vast for our sever to handle.
+            br
+            | If you think the server is being unreasonably wimpy, please contact the 
+            a.link.link-animated( href="mailto:contact@archivium.net" ) site&nbsp;admin
+            | .
           when 500
             | Something went wrong on our servers while rendering this page.
           default
-            | Something went wrong — that's all we know right now. 
+            | Something went wrong — that's all we know right now.
         case code
           when 200
           when 500

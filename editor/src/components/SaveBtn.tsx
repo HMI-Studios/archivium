@@ -68,6 +68,7 @@ export default function SaveBtn<T>({ data, saveUrl, previewUrl, previewText, onS
         const responseData = await response.json();
         if (!response.ok) {
           if (typeof responseData === 'string') setErrorMessage(responseData);
+          else if (typeof responseData.error === 'string') setErrorMessage(responseData.error);
           throw responseData;
         }
         console.log('SAVED.');
