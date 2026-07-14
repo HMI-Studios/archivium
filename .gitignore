@@ -3,13 +3,10 @@ qdrant_storage/
 
 .env
 
-dist/db/export/
-dist/db/backups/
+dist/
 
 logs/
 
 cypress/screenshots/
-
-dist/static/editor
 
 .vscode/
