@@ -1,23 +1,25 @@
-// Copies non-TS/JS static assets from src/ into dist/, mirroring their path.
-// (.ts/.js files are handled by tsc itself since allowJs is enabled.)
+// Copies static assets from src/ into dist/, mirroring their path.
 const fs = require('fs');
 const path = require('path');
 
 const SRC_DIRS = [
   'db/patches',
   'mjml',
+];
+
+const STATIC_DIRS = [
   'static',
 ];
 
 const SKIP_EXT = new Set(['.ts', '.tsx', '.js', '.jsx']);
 
-function copyDir(srcDir, destDir) {
+function copyDir(srcDir, destDir, skipExt) {
   for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
     const srcPath = path.join(srcDir, entry.name);
     const destPath = path.join(destDir, entry.name);
     if (entry.isDirectory()) {
-      copyDir(srcPath, destPath);
-    } else if (!SKIP_EXT.has(path.extname(entry.name))) {
+      copyDir(srcPath, destPath, skipExt);
+    } else if (!skipExt.has(path.extname(entry.name))) {
       fs.mkdirSync(destDir, { recursive: true });
       fs.copyFileSync(srcPath, destPath);
     }
@@ -27,7 +29,13 @@ function copyDir(srcDir, destDir) {
 for (const relDir of SRC_DIRS) {
   const srcDir = path.join(__dirname, '..', 'src', relDir);
   const destDir = path.join(__dirname, '..', 'dist', relDir);
-  if (fs.existsSync(srcDir)) copyDir(srcDir, destDir);
+  if (fs.existsSync(srcDir)) copyDir(srcDir, destDir, SKIP_EXT);
+}
+
+for (const relDir of STATIC_DIRS) {
+  const srcDir = path.join(__dirname, '..', 'src', relDir);
+  const destDir = path.join(__dirname, '..', 'dist', relDir);
+  if (fs.existsSync(srcDir)) copyDir(srcDir, destDir, new Set());
 }
 
 for (const file of ['schema.sql', 'schema_ref.sql', 'users.sql']) {
