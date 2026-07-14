@@ -23,7 +23,7 @@ export const systemDisplayModes = ['news'];
 
 // Basic context information to be sent to the templates
 async function contextData(req: Request) {
-  const user = req.session.user;
+  const user = req.session?.user;
   const contextUser = user ? {
     id: user.id,
     username: user.username,

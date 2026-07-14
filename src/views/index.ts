@@ -42,7 +42,9 @@ export default function(app: Express) {
       return Number(value);
     };
 
-    res.set('Content-Type', 'text/html; charset=utf-8');
+    if (!res.headersSent) {
+      res.set('Content-Type', 'text/html; charset=utf-8');
+    }
     res.prepareRender = (template, data={}) => {
       res.templateData = { template, data };
     };

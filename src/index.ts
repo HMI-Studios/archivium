@@ -28,11 +28,12 @@ logger.info('Server starting...');
 
 const app = express();
 app.use(compression());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 
 app.use(CookieParser);
 app.use(Auth.createSession);
+
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // Configure multer storage
 const upload = multer({
@@ -205,10 +206,16 @@ app.use('/', (req, res, next) => {
   next();
 });
 
-const errorLogger: express.ErrorRequestHandler = (err, req, res, next) => {
+const errorLogger: express.ErrorRequestHandler = async (err, req, res, next) => {
   logger.error(err);
-  res.status(500);
-  next();
+  if (res.headersSent) return next(err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status);
+  if (req.path.startsWith(`${ADDR_PREFIX}/api`)) {
+    res.json({ error: status === 413 ? 'Request entity too large.' : 'Internal Server Error.', code: status });
+  } else {
+    res.send(await render(req, 'error', { code: status }));
+  }
 };
 app.use(errorLogger);
 

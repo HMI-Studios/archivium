@@ -69,8 +69,9 @@ export default function LineageEditor({ item, categories, onUpdate, itemMap }: L
     onUpdate(newState);
   };
 
-  const itemTitles = Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {});
-  const itemTypes = Object.keys(itemMap).reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {});
+  const filteredItemKeys = Object.keys(itemMap).filter(key => itemMap[key].type in categories);
+  const itemTitles = filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: itemMap[key].title }), {});
+  const itemTypes = filteredItemKeys.reduce((acc, key) => ({ ...acc, [key]: capitalize(categories[itemMap[key].type][1]) }), {});
   const characterGroup = capitalize((categories['character'] ?? [])[1] ?? '');
 
   return <>
