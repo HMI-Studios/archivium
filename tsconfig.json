@@ -14,5 +14,6 @@
     "outDir": "dist",
     "allowJs": true,
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/static"]
 }
