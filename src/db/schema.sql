@@ -436,7 +436,7 @@ CREATE TABLE notificationtype (
 CREATE TABLE sentnotification (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(128),
-  body TEXT NOT NULL,
+  body TEXT,
   icon_url TEXT,
   click_url TEXT,
   notif_type VARCHAR(16) NOT NULL,
@@ -444,7 +444,9 @@ CREATE TABLE sentnotification (
   sent_at TIMESTAMP NOT NULL,
   is_read BOOLEAN DEFAULT FALSE,
   dedup_key VARCHAR(128),
-  FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE
+  comment_id INT,
+  FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE,
+  FOREIGN KEY (comment_id) REFERENCES comment (id) ON DELETE SET NULL
 );
 
 CREATE TABLE oauth_client (
