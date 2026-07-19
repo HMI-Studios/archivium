@@ -29,13 +29,14 @@ export type NotificationSubscription = {
 export type SentNotification = {
   id: number,
   title: string,
-  body: string,
+  body: string | null,
   icon_url: string | null,
   click_url: string | null,
   notif_type: string,
   user_id: number,
   sent_at: Date,
   is_read: boolean,
+  comment_id: number | null,
 };
 
 export type NotificationTypeSetting = {
@@ -52,18 +53,21 @@ enum methods {
   EMAIL,
 };
 
+export type NotificationType = 'contacts' | 'universe' | 'comments' | 'features';
+const types: { [key: string]: NotificationType } = {
+  CONTACTS: 'contacts',
+  UNIVERSE: 'universe',
+  COMMENTS: 'comments',
+  FEATURES: 'features',
+} as const;
+
 const methodDict = Object.keys(methods)
   .filter((x) => Number.isNaN(Number(x)))
   .reduce((acc, key) => ({ ...acc, [key]: methods[key] }), {});
 
 export class NotificationAPI {
   readonly api: API;
-  readonly types = {
-    CONTACTS: 'contacts',
-    UNIVERSE: 'universe',
-    COMMENTS: 'comments',
-    FEATURES: 'features',
-  } as const;
+  readonly types = types;
   readonly methods = methodDict;
 
   constructor(api: API) {
@@ -134,9 +138,9 @@ export class NotificationAPI {
     }
   }
 
-  async notify(target: User, notifType: string, message: { title: string, body: string, icon?: string, clickUrl?: string }, dedupKey?: string): Promise<void> {
+  async notify(target: User, notifType: NotificationType, message: { title: string, body: string | null, icon?: string, clickUrl?: string }, dedupKey?: string, commentId?: number): Promise<void> {
     const { title, body, icon, clickUrl } = message;
-    if (!title || !body) throw new ValidationError('Missing notification data');
+    if (!title || (!body && !commentId)) throw new ValidationError('Missing notification data');
 
     const settings = await this.getTypeSettings(target);
     const enabledMethods = settings.filter(s => s.notif_type === notifType).reduce((acc, val) => ({ ...acc, [val.notif_method]: Boolean(val.is_enabled) }), {});
@@ -155,17 +159,18 @@ export class NotificationAPI {
     }
     
     if (previousNotif) {
-      await executeQuery('UPDATE sentnotification SET title = ?, body = ?, icon_url = ?, click_url = ?, sent_at = ? WHERE id = ?', [
+      await executeQuery('UPDATE sentnotification SET title = ?, body = ?, icon_url = ?, click_url = ?, sent_at = ?, comment_id = ? WHERE id = ?', [
         title,
         body,
         icon ?? null,
         clickUrl ?? null,
         new Date(),
+        commentId ?? null,
         previousNotif.id,
       ]);
     } else {
       const autoMark = enabledMethods[methods.WEB] === false;
-      const { insertId } = await executeQuery('INSERT INTO sentnotification (title, body, icon_url, click_url, notif_type, user_id, sent_at, is_read, dedup_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      const { insertId } = await executeQuery('INSERT INTO sentnotification (title, body, icon_url, click_url, notif_type, user_id, sent_at, is_read, dedup_key, comment_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         title,
         body,
         icon ?? null,
@@ -175,9 +180,17 @@ export class NotificationAPI {
         new Date(),
         autoMark,
         dedupKey ?? null,
+        commentId ?? null,
       ]);
+
+      let actualBody = '';
+      if (body) actualBody = body;
+      if (notifType === 'comments' && commentId) {
+        actualBody = await executeQuery('SELECT body FROM comment WHERE id = ?', [commentId])[0]?.body;
+      }
+
   
-      const payload = JSON.stringify({ id: insertId, title, body, icon, clickUrl });
+      const payload = JSON.stringify({ id: insertId, title, body: actualBody, icon, clickUrl });
       if (WEB_PUSH_ENABLED && enabledMethods[methods.PUSH]) {
         const subscriptions = await this.getByUser(target);
         for (const { push_endpoint, push_keys } of subscriptions) {
@@ -189,7 +202,11 @@ export class NotificationAPI {
       }
   
       if (enabledMethods[methods.EMAIL] && target.email_notifications) {
-        await this.api.email.sendTemplateEmail(this.api.email.templates.NOTIFY, target.email, { title, body, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` });
+        await this.api.email.sendTemplateEmail(
+          this.api.email.templates.NOTIFY,
+          target.email,
+          { title, body: actualBody, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` },
+        );
       }
     }
   }
@@ -201,7 +218,19 @@ export class NotificationAPI {
    */
   async getSentNotifications(user: User): Promise<SentNotification[]> {
     if (!user) throw new UnauthorizedError();
-    const notifications = await executeQuery('SELECT * FROM sentnotification WHERE user_id = ? ORDER BY sent_at DESC', [user.id]);
+    const notifications = await executeQuery(`
+      SELECT
+        sentnotification.id, sentnotification.title,
+        COALESCE(sentnotification.body, comment.body) AS body,
+        sentnotification.icon_url, sentnotification.click_url,
+        sentnotification.notif_type, sentnotification.user_id,
+        sentnotification.sent_at, sentnotification.is_read,
+        sentnotification.dedup_key, sentnotification.comment_id
+      FROM sentnotification
+      LEFT JOIN comment ON comment.id = sentnotification.comment_id
+      WHERE sentnotification.user_id = ?
+      ORDER BY sent_at DESC
+    `, [user.id]);
     return notifications;
   }
 

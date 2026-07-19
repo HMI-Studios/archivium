@@ -1,7 +1,7 @@
 import { RouteHandler } from '..';
 import api from '../../api';
 import { Comment } from '../../api/models/discussion';
-import { User } from '../../api/models/user';
+import { BasicUser, User } from '../../api/models/user';
 import { getPfpUrl, handleAsNull, perms, tierLimits } from '../../api/utils';
 import { ADDR_PREFIX } from '../../config';
 import embedder from '../../embedding';
@@ -107,11 +107,10 @@ export default {
     if (threads.length === 0) throw new NotFoundError();
     const thread = threads[0];
     const [comments, users] = await api.discussion.getCommentsByThread(req.session.user, thread.id, false, true) as [Comment[], User[]];
-    const commenters = {};
+    const commenters: { [id: number]: BasicUser } = {};
     for (const user of users) {
       user.pfpUrl = getPfpUrl(user);
-      delete user.email;
-      commenters[user.id] = user;
+      commenters[user.id] = api.user.toBasicUser(user);
     }
 
     res.prepareRender('universeThread', {

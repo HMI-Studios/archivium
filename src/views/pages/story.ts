@@ -1,7 +1,7 @@
 import { RouteHandler } from '..';
 import api from '../../api';
 import { Comment } from '../../api/models/discussion';
-import { User } from '../../api/models/user';
+import { BasicUser, User } from '../../api/models/user';
 import { getPfpUrl, perms } from '../../api/utils';
 import { ADDR_PREFIX } from '../../config';
 import { NotFoundError } from '../../errors';
@@ -64,11 +64,10 @@ export default {
     const story = await api.story.getOne(req.session.user, { 'story.shortname': req.params.shortname });
     const chapter = await api.story.getChapter(req.session.user, story.shortname, Number(req.params.index));
     const [comments, commentUsers] = await api.discussion.getCommentsByChapter(chapter.id, true) as [Comment[], User[]];
-    const commenters = {};
+    const commenters: { [id: number]: BasicUser } = {};
     for (const user of commentUsers) {
       user.pfpUrl = getPfpUrl(user);
-      delete user.email;
-      commenters[user.id] = user;
+      commenters[user.id] = api.user.toBasicUser(user);
     }
 
     let renderedBody: RenderedBody = await tryRenderContent(req, chapter.body, story.universe_short);

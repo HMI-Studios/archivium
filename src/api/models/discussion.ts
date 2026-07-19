@@ -207,10 +207,10 @@ export class DiscussionAPI {
     if (!thread) throw new NotFoundError();
     if (!body) throw new ValidationError('Cannot post empty comments.');
 
-    let data;
+    let data: ResultSetHeader;
     await withTransaction(async (conn) => {
       const queryString1 = `INSERT INTO comment (body, author_id, reply_to, created_at) VALUES (?, ?, ?, ?);`;
-      [data] = await conn.execute(queryString1, [body, user.id, reply_to ?? null, new Date()]);
+      [data] = await conn.execute<ResultSetHeader>(queryString1, [body, user.id, reply_to ?? null, new Date()]);
       const queryString2 = `INSERT INTO threadcomment (thread_id, comment_id) VALUES (?, ?)`;
       await conn.execute(queryString2, [thread.id, data.insertId])
     });
@@ -219,13 +219,13 @@ export class DiscussionAPI {
       if (target.id === user.id) return;
       await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
         title: `${user.username} commented in ${thread.title}:`,
-        body: body,
+        body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${thread.universe_short}/discuss/${thread.id}`,
-      });
+      }, undefined, data.insertId);
     })
 
-    return data;
+    return data!;
   }
 
   async postCommentToItem(user: User | undefined, universeShortname: string, itemShortname: string, { body, reply_to }: { body: string, reply_to?: number }): Promise<ResultSetHeader> {
@@ -253,10 +253,10 @@ export class DiscussionAPI {
       if (target.id === user.id) return;
       await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
         title: `${user.username} commented on ${item.title}:`,
-        body: body,
+        body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${universeShortname}/items/${itemShortname}`,
-      });
+      }, undefined, data.insertId);
     })
 
     return data;
@@ -281,10 +281,10 @@ export class DiscussionAPI {
       if (target) {
         await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
           title: `${user.username} commented on ${chapter.title} of ${story.title}:`,
-          body: body,
+          body: null,
           icon: getPfpUrl(user),
           clickUrl: `/stories/${story.shortname}/${chapter.chapter_number}`,
-        });
+        }, undefined, data.insertId);
       }
     }
 
