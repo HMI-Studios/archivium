@@ -39,14 +39,16 @@ export default {
       limit: 15
     });
     if (!items) return;
-    if (req.session.user?.id !== user.id) {
+    const pfpUrl = getPfpUrl(user);
+    const isSelf = req.session.user?.id === user.id;
+    if (!isSelf) {
       const contact = await api.contact.getOne(req.session.user, user.id).catch(handleAsNull(NotFoundError));
       user.isContact = contact !== null;
     }
     res.prepareRender('user', {
-      user,
+      user: isSelf ? user : api.user.toBasicUser(user),
       items,
-      pfpUrl: getPfpUrl(user),
+      pfpUrl,
       universes,
       recentlyUpdated,
     });

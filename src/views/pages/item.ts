@@ -3,7 +3,7 @@ import api from '../../api';
 import { Comment } from '../../api/models/discussion';
 import { Family, Item } from '../../api/models/item';
 import { Note } from '../../api/models/note';
-import { User } from '../../api/models/user';
+import { BasicUser, User } from '../../api/models/user';
 import { getPfpUrl, perms } from '../../api/utils';
 import { ForbiddenError, NotFoundError } from '../../errors';
 import { FamilyTreeLayout, layoutFamilyTree } from '../../lib/familyTree';
@@ -83,19 +83,17 @@ export default {
     }
 
     const [comments, commentUsers] = await api.discussion.getCommentsByItem(item.id, true) as [Comment[], User[]];
-    const commenters = {};
+    const commenters: { [id: number]: BasicUser } = {};
     for (const user of commentUsers) {
       user.pfpUrl = getPfpUrl(user);
-      delete user.email;
-      commenters[user.id] = user;
+      commenters[user.id] = api.user.toBasicUser(user);
     }
 
     const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true) as [Note[], User[]];
-    const noteAuthors = {};
+    const noteAuthors: { [id: number]: BasicUser } = {};
     for (const user of noteUsers) {
       user.pfpUrl = getPfpUrl(user);
-      delete user.email;
-      noteAuthors[user.id] = user;
+      noteAuthors[user.id] = api.user.toBasicUser(user);
     }
 
     const relatedItems = (universe.obj_data as any).semanticSearchEnabled

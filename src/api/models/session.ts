@@ -38,7 +38,7 @@ export class SessionAPI {
     const data = await executeQuery(queryString, parsedOptions.values) as Session[];
     const session = data[0];
     if (!session || !session.user_id) return session;
-    const user = await this.api.user.getOne({ 'user.id': session.user_id }, false, true);
+    const user = await this.api.user.getOne({ 'user.id': session.user_id }, true);
     session.user = user;
     return session;
   }

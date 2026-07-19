@@ -18,24 +18,30 @@ export type UserImage = {
   data: Buffer,
 };
 
-export type User = {
+export type BasicUser = {
   id: number,
   username: string,
-  email?: string,
-  pfpUrl?: string,
-  password?: string,
-  salt?: string,
   created_at: Date,
   updated_at: Date,
+  isContact: boolean,
+  hasPfp: boolean,
+  pfpUrl?: string,
+};
+
+export type User = BasicUser & {
+  email: string,
   verified: boolean,
   suspect: boolean,
   email_notifications: boolean,
   preferred_theme: ThemeName | null,
   custom_theme: Theme | null,
-  isContact?: boolean,
-  hasPfp?: boolean,
-  plan?: plans,
-  notifications?: number,
+  plan: plans,
+  notifications: number,
+};
+
+export type AuthUser = User & {
+  password: string,
+  salt: string,
 };
 
 const validateUsername = (username: string) => {
@@ -140,18 +146,26 @@ export class UserAPI {
     this.api = api;
   }
 
-  /**
-   * returns a "safe" version of the user object with password data removed unless the includeAuth parameter is true
-   * @param {*} options
-   * @param {boolean} includeAuth
-   * @returns {Promise<User>}
-   */
-  async getOne(options: any, includeAuth: boolean=false, includeNotifs=false): Promise<User> {
+  toBasicUser(user: User): BasicUser {
+    return {
+      id: user.id,
+      username: user.username,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      isContact: user.isContact,
+      hasPfp: user.hasPfp,
+      pfpUrl: user.pfpUrl,
+    };
+  }
+
+  private async fetchUser<T extends User>(options: any, includeAuth=false, includeNotifs=false): Promise<T> {
     if (!options || Object.keys(options).length === 0) throw new ValidationError('options required for api.get.user');
     const parsedOptions = parseData(options);
     const queryString = `
       SELECT
-        user.*,
+        user.id, user.username, user.email, user.password, user.salt, user.created_at,user.updated_at,
+        user.verified, user.suspect, user.email_notifications, user.preferred_theme, user.custom_theme,
+        ${includeAuth ? 'user.password, user.salt,' : ''}
         (ui.user_id IS NOT NULL) AS hasPfp,
         up.plan
         ${includeNotifs ? ', COUNT(notif.id) AS notifications' : ''}
@@ -163,13 +177,27 @@ export class UserAPI {
       GROUP BY user.id, up.plan
       LIMIT 1;
     `;
-    const user = (await executeQuery(queryString, parsedOptions.values))[0] as User;
+    const user = (await executeQuery(queryString, parsedOptions.values))[0] as T;
     if (!user) throw new NotFoundError();
-    if (!includeAuth) {
-      delete user.password;
-      delete user.salt;
-    }
     return user;
+  }
+
+  /**
+   * returns a "safe" version of the user object
+   * @param {*} options
+   * @returns {Promise<User>}
+   */
+  getOne(options: any, includeNotifs=false): Promise<User> {
+    return this.fetchUser<User>(options, false, includeNotifs);
+  }
+
+  /**
+   * 
+   * @param {*} options
+   * @returns {Promise<User>}
+   */
+  getOneWithAuth(options: any, includeNotifs=false): Promise<AuthUser> {
+    return this.fetchUser<AuthUser>(options, true, includeNotifs);
   }
 
   /**
@@ -304,7 +332,7 @@ export class UserAPI {
   async putPreferences(sessionUser: User | undefined, username: string, body: { preferred_theme: string, custom_theme: Theme }): Promise<ResultSetHeader> {
     if (!sessionUser) throw new UnauthorizedError();
     const { preferred_theme, custom_theme } = body;
-    const user = await this.getOne({ 'user.username': username }, true);
+    const user = await this.getOne({ 'user.username': username });
     if (Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
     const changes = { preferred_theme, custom_theme };
     const keys = Object.keys(changes).filter(key => changes[key] !== undefined);
@@ -362,7 +390,7 @@ export class UserAPI {
   }
 
   async putEmail(sessionUser: User | undefined, username: string, { email, password }): Promise<ResultSetHeader> {
-    const user = await this.getOne({ 'user.username': username }, true);
+    const user = await this.getOneWithAuth({ 'user.username': username });
     if (!sessionUser || Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
     const isCorrectLogin = this.validatePassword(password, user.password, user.salt);
     if (!isCorrectLogin) throw new UnauthorizedError('Incorrect password');
@@ -377,7 +405,7 @@ export class UserAPI {
   }
 
   async putPassword(sessionUser: User | undefined, username: string, { oldPassword, newPassword }): Promise<ResultSetHeader> {
-    const user = await this.getOne({ 'user.username': username }, true);
+    const user = await this.getOneWithAuth({ 'user.username': username });
     if (!sessionUser || Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
     const isCorrectLogin = this.validatePassword(oldPassword, user.password, user.salt);
     if (!isCorrectLogin) throw new UnauthorizedError('Incorrect password');
@@ -438,9 +466,9 @@ export class UserAPI {
     return [200];
   }
 
-  async del(sessionUser, username, password): Promise<void> {
+  async del(sessionUser: User | undefined, username: string, password: string): Promise<void> {
     if (!sessionUser) throw new UnauthorizedError();
-    const user = await this.getOne({ 'user.username': username }, true);
+    const user = await this.getOneWithAuth({ 'user.username': username });
     if (user) {
       if (sessionUser.id !== user.id) {
         throw new ForbiddenError('Can\'t delete user you\'re not logged in as!');

@@ -114,7 +114,10 @@ export default function (app: Express, upload: Multer) {
     }),
     new APIRoute('/users', { GET: () => api.user.getMany() }, [
       new APIRoute('/:username', {
-        GET: (req) => api.user.getOne({ 'user.username': req.params.username }),
+        GET: async (req) => {
+          const user = await api.user.getOne({ 'user.username': req.params.username });
+          return req.session.user?.id === user.id ? user : api.user.toBasicUser(user);
+        },
         DELETE: (req) => api.user.del(req.session.user, req.params.username, req.body.password),
       }, [
         new APIRoute('/send-verify-link', { GET: (req) => api.email.trySendVerifyLink(req.session.user, req.params.username) }),
