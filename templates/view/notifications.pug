@@ -77,7 +77,11 @@ block content
             else
               b.mr-2 #{notification.title}
             small #{formatDate(notification.sent_at)}
-          p #{notification.body}
+          if notification.body
+            p #{notification.body}
+          else
+            p(style={ color: 'var(--light-text-color)' })
+              i #{T('This comment has been deleted.')}
         a.link.material-symbols-outlined(onclick=`markNotification(true, ${notification.id})` title='Mark as read') drafts
 
   .d-flex.align-center.gap-4.my-4
@@ -96,5 +100,9 @@ block content
             else
               b.mr-2 #{notification.title}
             small #{formatDate(notification.sent_at)}
-          p #{notification.body}
+          if notification.body
+            p #{notification.body}
+          else
+            p(style={ color: 'var(--light-text-color)' })
+              i #{T('This comment has been deleted.')}
         a.link.material-symbols-outlined(onclick=`markNotification(false, ${notification.id})` title='Mark as unread') mark_email_unread

@@ -29,7 +29,7 @@ export type NotificationSubscription = {
 export type SentNotification = {
   id: number,
   title: string,
-  body: string,
+  body: string | null,
   icon_url: string | null,
   click_url: string | null,
   notif_type: string,
@@ -47,13 +47,19 @@ export type NotificationTypeSetting = {
   is_enabled: boolean,
 };
 
-const DELETED_COMMENT_BODY = 'This comment has been deleted.';
-
 enum methods {
   WEB,
   PUSH,
   EMAIL,
 };
+
+export type NotificationType = 'contacts' | 'universe' | 'comments' | 'features';
+const types: { [key: string]: NotificationType } = {
+  CONTACTS: 'contacts',
+  UNIVERSE: 'universe',
+  COMMENTS: 'comments',
+  FEATURES: 'features',
+} as const;
 
 const methodDict = Object.keys(methods)
   .filter((x) => Number.isNaN(Number(x)))
@@ -61,12 +67,7 @@ const methodDict = Object.keys(methods)
 
 export class NotificationAPI {
   readonly api: API;
-  readonly types = {
-    CONTACTS: 'contacts',
-    UNIVERSE: 'universe',
-    COMMENTS: 'comments',
-    FEATURES: 'features',
-  } as const;
+  readonly types = types;
   readonly methods = methodDict;
 
   constructor(api: API) {
@@ -137,9 +138,9 @@ export class NotificationAPI {
     }
   }
 
-  async notify(target: User, notifType: string, message: { title: string, body: string, icon?: string, clickUrl?: string }, dedupKey?: string, commentId?: number): Promise<void> {
+  async notify(target: User, notifType: NotificationType, message: { title: string, body: string | null, icon?: string, clickUrl?: string }, dedupKey?: string, commentId?: number): Promise<void> {
     const { title, body, icon, clickUrl } = message;
-    if (!title || !body) throw new ValidationError('Missing notification data');
+    if (!title || (!body && !commentId)) throw new ValidationError('Missing notification data');
 
     const settings = await this.getTypeSettings(target);
     const enabledMethods = settings.filter(s => s.notif_type === notifType).reduce((acc, val) => ({ ...acc, [val.notif_method]: Boolean(val.is_enabled) }), {});
@@ -157,12 +158,10 @@ export class NotificationAPI {
       `, [dedupKey, target.id, notifType]))[0];
     }
     
-    const storedBody = commentId ? null : body;
-
     if (previousNotif) {
       await executeQuery('UPDATE sentnotification SET title = ?, body = ?, icon_url = ?, click_url = ?, sent_at = ?, comment_id = ? WHERE id = ?', [
         title,
-        storedBody,
+        body,
         icon ?? null,
         clickUrl ?? null,
         new Date(),
@@ -173,7 +172,7 @@ export class NotificationAPI {
       const autoMark = enabledMethods[methods.WEB] === false;
       const { insertId } = await executeQuery('INSERT INTO sentnotification (title, body, icon_url, click_url, notif_type, user_id, sent_at, is_read, dedup_key, comment_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         title,
-        storedBody,
+        body,
         icon ?? null,
         clickUrl ?? null,
         notifType,
@@ -183,8 +182,15 @@ export class NotificationAPI {
         dedupKey ?? null,
         commentId ?? null,
       ]);
+
+      let actualBody = '';
+      if (body) actualBody = body;
+      if (notifType === 'comments' && commentId) {
+        actualBody = await executeQuery('SELECT body FROM comment WHERE id = ?', [commentId])[0]?.body;
+      }
+
   
-      const payload = JSON.stringify({ id: insertId, title, body, icon, clickUrl });
+      const payload = JSON.stringify({ id: insertId, title, body: actualBody, icon, clickUrl });
       if (WEB_PUSH_ENABLED && enabledMethods[methods.PUSH]) {
         const subscriptions = await this.getByUser(target);
         for (const { push_endpoint, push_keys } of subscriptions) {
@@ -196,7 +202,11 @@ export class NotificationAPI {
       }
   
       if (enabledMethods[methods.EMAIL] && target.email_notifications) {
-        await this.api.email.sendTemplateEmail(this.api.email.templates.NOTIFY, target.email, { title, body, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` });
+        await this.api.email.sendTemplateEmail(
+          this.api.email.templates.NOTIFY,
+          target.email,
+          { title, body: actualBody, icon, clickUrl: `https://${DOMAIN}${ADDR_PREFIX}${clickUrl}` },
+        );
       }
     }
   }
@@ -211,7 +221,7 @@ export class NotificationAPI {
     const notifications = await executeQuery(`
       SELECT
         sentnotification.id, sentnotification.title,
-        COALESCE(sentnotification.body, comment.body, ?) AS body,
+        COALESCE(sentnotification.body, comment.body) AS body,
         sentnotification.icon_url, sentnotification.click_url,
         sentnotification.notif_type, sentnotification.user_id,
         sentnotification.sent_at, sentnotification.is_read,
@@ -220,8 +230,7 @@ export class NotificationAPI {
       LEFT JOIN comment ON comment.id = sentnotification.comment_id
       WHERE sentnotification.user_id = ?
       ORDER BY sent_at DESC
-    `, [DELETED_COMMENT_BODY, user.id]);
-    // TODO - may want to set the deleted comment text in Pug eventually but this will do fine for now
+    `, [user.id]);
     return notifications;
   }
 

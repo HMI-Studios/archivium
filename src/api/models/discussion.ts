@@ -219,7 +219,7 @@ export class DiscussionAPI {
       if (target.id === user.id) return;
       await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
         title: `${user.username} commented in ${thread.title}:`,
-        body: body, // TODO this is currently ignored, should eventually just be `null`
+        body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${thread.universe_short}/discuss/${thread.id}`,
       }, undefined, data.insertId);
@@ -253,7 +253,7 @@ export class DiscussionAPI {
       if (target.id === user.id) return;
       await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
         title: `${user.username} commented on ${item.title}:`,
-        body: body,
+        body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${universeShortname}/items/${itemShortname}`,
       }, undefined, data.insertId);
@@ -281,7 +281,7 @@ export class DiscussionAPI {
       if (target) {
         await this.api.notification.notify(target, this.api.notification.types.COMMENTS, {
           title: `${user.username} commented on ${chapter.title} of ${story.title}:`,
-          body: body,
+          body: null,
           icon: getPfpUrl(user),
           clickUrl: `/stories/${story.shortname}/${chapter.chapter_number}`,
         }, undefined, data.insertId);
