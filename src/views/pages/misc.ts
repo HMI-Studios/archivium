@@ -124,5 +124,10 @@ export default {
     }
 
     res.prepareRender('editor', data);
+  },
+
+  /* Custom calendar engine sandbox - standalone, not linked from the nav */
+  async calendarLab(_, res) {
+    res.prepareRender('calendarLab');
   }
 } satisfies Record<string, RouteHandler>;
