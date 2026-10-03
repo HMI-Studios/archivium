@@ -1,6 +1,7 @@
 import db from '.';
 import readline from 'readline';
 import api from '../api';
+import { kysely } from '../db/kysely';
 import { askQuestion } from './import';
 import { handleAsNull } from '../api/utils';
 import { ForbiddenError, UnauthorizedError } from '../errors';
@@ -22,7 +23,7 @@ async function main() {
     return;
   }
 
-  const users = await api.user.getMany(null, true);
+  const users = await kysely.selectFrom('user').select(['id', 'email', 'email_notifications']).execute();
   const proceed = await askQuestion(`${users.length} users to send to, proceed? [y/N] `);
   if (proceed.toUpperCase() === 'N') {
     console.log('Exiting.');

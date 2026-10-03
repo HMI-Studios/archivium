@@ -1,17 +1,15 @@
 import { RouteHandler } from '..';
 import api from '../../api';
-import { Comment } from '../../api/models/discussion';
+import { CommenterUserBasic } from '../../api/models/discussion';
 import { Family, Item } from '../../api/models/item';
-import { Note } from '../../api/models/note';
-import { BasicUser, User } from '../../api/models/user';
 import { getPfpUrl, perms } from '../../api/utils';
+import embedder from '../../embedding';
 import { ForbiddenError, NotFoundError } from '../../errors';
 import { FamilyTreeLayout, layoutFamilyTree } from '../../lib/familyTree';
-import { RenderedBody, tryRenderContent } from '../../lib/renderContent';
 import { itemLayoutTabs, layoutTabKey } from '../../lib/itemTypeConfig';
+import { RenderedBody, tryRenderContent } from '../../lib/renderContent';
 import { buildLayoutView, LayoutView } from '../../lib/tabLayout';
 import { universeLink } from '../../templates';
-import embedder from '../../embedding';
 
 export default {
   async list(req, res) {
@@ -80,32 +78,30 @@ export default {
     item.itemTypeColor = ((universe.obj_data['cats'] ?? {})[item.item_type] ?? [,,'#f3f3f3'])[2];
 
     let renderedBody: RenderedBody = { type: 'text', content: '' };
-    if ('body' in item.obj_data) {
+    if (item.obj_data && 'body' in item.obj_data) {
       renderedBody = await tryRenderContent(req, item.obj_data.body, universe.shortname);
     }
 
-    const layoutTabs: (LayoutView & { key: string })[] = itemLayoutTabs(item.obj_data, universe.obj_data)
+    const layoutTabs: (LayoutView & { key: string })[] = itemLayoutTabs(item.obj_data ?? {}, universe.obj_data)
       .map(({ layout, data }) => ({ ...buildLayoutView(layout, data, item.title), key: layoutTabKey(layout.id) }));
 
     let family: Family = {};
     let familyLayout: FamilyTreeLayout | null = null;
-    if ('lineage' in item.obj_data) {
+    if (item.obj_data && 'lineage' in item.obj_data) {
       family = await api.item.getFamilyTree(req.session.user, item, 10);
       familyLayout = layoutFamilyTree(item.shortname, family);
     }
 
-    const [comments, commentUsers] = await api.discussion.getCommentsByItem(item.id, true) as [Comment[], User[]];
-    const commenters: { [id: number]: BasicUser } = {};
+    const [comments, commentUsers = []] = await api.discussion.getCommentsByItem(item.id, true);
+    const commenters: { [id: number]: CommenterUserBasic & { pfpUrl: string } } = {};
     for (const user of commentUsers) {
-      user.pfpUrl = getPfpUrl(user);
-      commenters[user.id] = api.user.toBasicUser(user);
+      commenters[user.id] = { ...user, pfpUrl: getPfpUrl(user) };
     }
 
-    const [notes, noteUsers] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true) as [Note[], User[]];
-    const noteAuthors: { [id: number]: BasicUser } = {};
+    const [notes, noteUsers = []] = await api.note.getByItemShortname(req.session.user, universe.shortname, item.shortname, {}, { connections: true }, true);
+    const noteAuthors: { [id: number]: CommenterUserBasic & { pfpUrl: string } } = {};
     for (const user of noteUsers) {
-      user.pfpUrl = getPfpUrl(user);
-      noteAuthors[user.id] = api.user.toBasicUser(user);
+      noteAuthors[user.id] = { ...user, pfpUrl: getPfpUrl(user) };
     }
 
     const relatedItems = universe.obj_data.semanticSearchEnabled

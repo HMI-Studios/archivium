@@ -1,5 +1,5 @@
 import db from '.';
-import { executeQuery } from '../api/utils';
+import { executeQuery } from './legacy';
 import { generatePreview } from '../lib/imagePreview';
 
 async function main() {

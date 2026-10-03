@@ -1,9 +1,8 @@
-import { executeQuery, parseData } from '../utils';
+import { sql } from 'kysely';
+import { kysely } from '../../db/kysely';
 import utils from '../../lib/hashUtils';
 import { API } from '..';
-import { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { User } from './user';
-import { ModelError } from '../../errors';
 
 export type Session = {
   id: number;
@@ -33,42 +32,59 @@ export class SessionAPI {
 
   // Unlike other models, this one will not throw on missing data, but will return undefined instead.
   async getOne(options: SessionConditions): Promise<Session | undefined> {
-    const parsedOptions = parseData(options);
-    const queryString = `SELECT * FROM session WHERE ${parsedOptions.strings.join(' AND ')} LIMIT 1;`;
-    const data = await executeQuery(queryString, parsedOptions.values) as Session[];
-    const session = data[0];
-    if (!session || !session.user_id) return session;
-    const user = await this.api.user.getOne({ 'user.id': session.user_id }, true);
-    session.user = user;
-    return session;
+    const row = await kysely
+      .selectFrom('session')
+      .selectAll()
+      .$if(options.id !== undefined, (qb) => qb.where('id', '=', options.id!))
+      .$if(options.hash !== undefined, (qb) => qb.where('hash', '=', options.hash!))
+      .$if(options.user_id !== undefined, (qb) => qb.where('user_id', '=', options.user_id!))
+      .$if(options.created_at !== undefined, (qb) => qb.where('created_at', '=', options.created_at!))
+      .limit(1)
+      .executeTakeFirst();
+    if (!row) return undefined;
+    if (!row.user_id) return { id: row.id, hash: row.hash, created_at: row.created_at };
+    const user = await this.api.user.getOne({ 'user.id': row.user_id }, true);
+    return { id: row.id, hash: row.hash, created_at: row.created_at, user_id: row.user_id, user };
   }
 
-  async post(): Promise<ResultSetHeader> {
+  async post(): Promise<{ insertId: number }> {
     const data = utils.createRandom32String();
     const hash = utils.createHash(data);
-    const queryString = `INSERT INTO session (hash, created_at) VALUES (?, ?);`;
-    return await executeQuery<ResultSetHeader>(queryString, [hash, new Date()]);
+    const result = await kysely
+      .insertInto('session')
+      .values({ hash, created_at: new Date() })
+      .executeTakeFirstOrThrow();
+    return { insertId: Number(result.insertId ?? 0) };
   }
 
-  async put(options: SessionConditions, changes: SessionChanges): Promise<ResultSetHeader> {
-    const { user_id } = changes;
-    const parsedOptions = parseData(options);
-    const queryString = `UPDATE session SET user_id = ? WHERE ${parsedOptions.strings.join(' AND ')}`;
-    return await executeQuery<ResultSetHeader>(queryString, [user_id, ...parsedOptions.values]);
+  async put(options: SessionConditions, changes: SessionChanges): Promise<{ numUpdatedRows: number }> {
+    const result = await kysely
+      .updateTable('session')
+      .set({ user_id: changes.user_id })
+      .$if(options.id !== undefined, (qb) => qb.where('id', '=', options.id!))
+      .$if(options.hash !== undefined, (qb) => qb.where('hash', '=', options.hash!))
+      .$if(options.user_id !== undefined, (qb) => qb.where('user_id', '=', options.user_id!))
+      .$if(options.created_at !== undefined, (qb) => qb.where('created_at', '=', options.created_at!))
+      .executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  /**
-   * for internal use only - does not conform to the standard return format!
-   * @param options
-   * @returns {Promise<ResultSetHeader>}
-   */
-  async del(options: SessionConditions): Promise<ResultSetHeader> {
-    const parsedOptions = parseData(options);
-    const queryString = `DELETE FROM session WHERE ${parsedOptions.strings.join(' AND ')}`;
-    return await executeQuery<ResultSetHeader>(queryString, parsedOptions.values);
+  async del(options: SessionConditions): Promise<{ numDeletedRows: number }> {
+    const result = await kysely
+      .deleteFrom('session')
+      .$if(options.id !== undefined, (qb) => qb.where('id', '=', options.id!))
+      .$if(options.hash !== undefined, (qb) => qb.where('hash', '=', options.hash!))
+      .$if(options.user_id !== undefined, (qb) => qb.where('user_id', '=', options.user_id!))
+      .$if(options.created_at !== undefined, (qb) => qb.where('created_at', '=', options.created_at!))
+      .executeTakeFirstOrThrow();
+    return { numDeletedRows: Number(result.numDeletedRows) };
   }
 
-  async purge(): Promise<ResultSetHeader> {
-    return await executeQuery('DELETE FROM session WHERE created_at < NOW() - INTERVAL 8 DAY');
+  async purge(): Promise<{ affectedRows: number }> {
+    const result = await kysely
+      .deleteFrom('session')
+      .where('created_at', '<', sql<Date>`NOW() - INTERVAL 8 DAY`)
+      .executeTakeFirstOrThrow();
+    return { affectedRows: Number(result.numDeletedRows) };
   }
 }

@@ -1,11 +1,11 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
-import { ResultSetHeader } from 'mysql2';
 import api from './api';
-import { BasicItem, Item } from './api/models/item';
+import { Item, ObjData } from './api/models/item';
 import { Universe } from './api/models/universe';
 import { User } from './api/models/user';
-import { executeQuery, perms } from './api/utils';
+import { perms } from './api/utils';
 import { EMBEDDING_API_URL, LMSTER_KEY, QDRANT_URL } from './config';
+import { kysely } from './db/kysely';
 import { createHash } from './lib/hashUtils';
 import { getTextContent, IndexedDocument, indexedToJson } from './lib/tiptapHelpers';
 import logger from './logger';
@@ -163,7 +163,7 @@ class Embedder {
 
   public async enableEmbed(universe: Universe) {
     if (!EMBEDDING_ENABLED) return;
-    const items = await executeQuery('SELECT id FROM item WHERE universe_id = ?', [universe.id]) as Item[];
+    const items = await kysely.selectFrom('item').select('id').where('universe_id', '=', universe.id).execute();
     logger.info(`Enabling semantic search for ${universe.title} with ${items.length} items to check...`);
     for (const { id } of items) {
       this.addJob({ type: 'check', itemId: id });
@@ -193,12 +193,14 @@ class Embedder {
   }
 
   public async getStatsForUniverse(universeId: number): Promise<{ chunkCount: number, itemCount: number, estimatedBytes: number }> {
-    const [row] = await executeQuery(`
-      SELECT COUNT(*) AS chunkCount, COUNT(DISTINCT item_id) AS itemCount
-      FROM itemembeddedchunks
-      INNER JOIN item ON item.id = itemembeddedchunks.item_id
-      WHERE item.universe_id = ?
-    `, [universeId]);
+    const row = await kysely.selectFrom('itemembeddedchunks')
+      .innerJoin('item', 'item.id', 'itemembeddedchunks.item_id')
+      .select((eb) => [
+        eb.fn.countAll<number>().as('chunkCount'),
+        eb.fn.count<number>('itemembeddedchunks.item_id').distinct().as('itemCount'),
+      ])
+      .where('item.universe_id', '=', universeId)
+      .executeTakeFirst();
 
     const chunkCount = Number(row?.chunkCount ?? 0);
     return {
@@ -211,10 +213,12 @@ class Embedder {
   public async getRelatedItems(user: User | undefined, itemId: number, universeId: number, limit = 6): Promise<Item[]> {
     if (!EMBEDDING_ENABLED) return [];
     try {
-      const [ownChunk] = await executeQuery(
-        `SELECT id FROM itemembeddedchunks WHERE item_id = ? AND scope = 'item' LIMIT 1`,
-        [itemId],
-      );
+      const ownChunk = await kysely.selectFrom('itemembeddedchunks')
+        .select('id')
+        .where('item_id', '=', itemId)
+        .where('scope', '=', 'item')
+        .limit(1)
+        .executeTakeFirst();
       if (!ownChunk) return [];
 
       const { points } = await qdrantClient.query(COLLECTION_NAME, {
@@ -228,10 +232,10 @@ class Embedder {
       if (points.length === 0) return [];
 
       const chunkIds = points.map(p => Number(p.id));
-      const chunks = await executeQuery(
-        `SELECT id, item_id FROM itemembeddedchunks WHERE id IN (${chunkIds.map(() => '?').join(',')})`,
-        chunkIds,
-      );
+      const chunks = await kysely.selectFrom('itemembeddedchunks')
+        .select(['id', 'item_id'])
+        .where('id', 'in', chunkIds)
+        .execute();
       const itemIdByChunkId = new Map(chunks.map(c => [c.id, c.item_id]));
 
       const bestScoreByItem = new Map<number, number>();
@@ -291,20 +295,24 @@ class Embedder {
   }
 
   private async checkItem(id: number) {
-    const item = (await executeQuery('SELECT * FROM item WHERE id = ?', [id]))[0] as BasicItem;
+    const item = await kysely.selectFrom('item')
+      .select(['id', 'title', 'item_type', 'universe_id', 'obj_data'])
+      .where('id', '=', id)
+      .executeTakeFirst();
     if (!item || !item.obj_data) return;
-    if (!item.obj_data.body) return;
-    const chunks = this.calculateChunks(item.obj_data.body);
-    const existingChunks: Record<string, any> = (
-      await executeQuery('SELECT * FROM itemembeddedchunks WHERE item_id = ?', [id])
-    ).reduce((acc, chunk) => ({ ...acc, [chunk.chunk_id]: chunk }), {});
+    const objData = item.obj_data as ObjData;
+    if (!objData.body) return;
+    const chunks = this.calculateChunks(objData.body);
+    const existingChunkRows = await kysely.selectFrom('itemembeddedchunks').selectAll().where('item_id', '=', id).execute();
+    const existingChunks: Record<string, typeof existingChunkRows[number]> = existingChunkRows
+      .reduce((acc, chunk) => ({ ...acc, [chunk.chunk_id]: chunk }), {});
     let index = 0;
     for (const chunk of chunks) {
       const hash = createHash(chunk.text);
       const chunkId = `${id}_${index}`;
       if (chunkId in existingChunks) {
         if (!(hash === existingChunks[chunkId].hash && chunk.text === existingChunks[chunkId].content)) {
-          await executeQuery('DELETE FROM itemembeddedchunks WHERE id = ?', [existingChunks[chunkId].id]);
+          await kysely.deleteFrom('itemembeddedchunks').where('id', '=', existingChunks[chunkId].id).execute();
           await qdrantClient.delete(COLLECTION_NAME, {
             wait: true,
             points: [existingChunks[chunkId].id],
@@ -328,7 +336,7 @@ class Embedder {
       index++;
     }
     for (const chunkId in existingChunks) {
-      await executeQuery('DELETE FROM itemembeddedchunks WHERE id = ?', [existingChunks[chunkId].id]);
+      await kysely.deleteFrom('itemembeddedchunks').where('id', '=', existingChunks[chunkId].id).execute();
       await qdrantClient.delete(COLLECTION_NAME, {
         wait: true,
         points: [existingChunks[chunkId].id],
@@ -395,24 +403,30 @@ class Embedder {
     const vector = await requestEmbedding(embedText);
 
     const hash = createHash(chunk.text);
-    const { insertId } = await executeQuery<ResultSetHeader>(`
-      INSERT INTO itemembeddedchunks
-      (chunk_id, item_id, scope, heading_path, content, token_count, hash)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [chunkId, itemId, chunk.scope, chunk.path, chunk.text, chunk.size, hash]);
+    const insertResult = await kysely.insertInto('itemembeddedchunks')
+      .values({
+        chunk_id: chunkId,
+        item_id: itemId,
+        scope: chunk.scope,
+        heading_path: chunk.path,
+        content: chunk.text,
+        token_count: chunk.size,
+        hash,
+      })
+      .executeTakeFirstOrThrow();
 
     const payload = { universeId, itemId, itemTitle, itemType, chunkId, path: chunk.path, scope: chunk.scope };
 
     await qdrantClient.upsert(COLLECTION_NAME, {
       wait: true,
-      points: [{ id: insertId, vector, payload }],
+      points: [{ id: Number(insertResult.insertId), vector, payload }],
     });
   }
 
   public async reembedItem(id: number) {
     if (!EMBEDDING_ENABLED) return;
-    const { affectedRows } = await executeQuery<ResultSetHeader>('DELETE FROM itemembeddedchunks WHERE item_id = ?', [id]);
-    if (affectedRows > 0) {
+    const deleteResult = await kysely.deleteFrom('itemembeddedchunks').where('item_id', '=', id).executeTakeFirst();
+    if (Number(deleteResult.numDeletedRows) > 0) {
       await qdrantClient.delete(COLLECTION_NAME, {
         wait: true,
         filter: {
@@ -470,14 +484,11 @@ class Embedder {
 
     const chunkIds = points.map(r => Number(r.id));
     if (chunkIds.length === 0) return resolve([]);
-    const chunks = await executeQuery(
-      `SELECT * FROM itemembeddedchunks WHERE id IN (${chunkIds.map(() => '?').join(',')})`,
-      [...chunkIds],
-    ) as FetchedChunk[];
+    const chunks = await kysely.selectFrom('itemembeddedchunks').selectAll().where('id', 'in', chunkIds).execute();
 
     resolve(
       chunks
-        .map(r => ({ ...r, score: scoreMap[r.id] }))
+        .map(r => ({ ...r, score: scoreMap[r.id] } as FetchedChunk))
         .filter(r => r.score >= MIN_RELEVANCE_SCORE)
         .sort((a, b) => a.score > b.score ? -1 : 1)
     );

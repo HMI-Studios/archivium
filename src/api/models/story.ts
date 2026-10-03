@@ -1,13 +1,13 @@
-import { BaseOptions, executeQuery, parseData, perms, withTransaction } from '../utils';
+import { sql } from 'kysely';
+import sharp from 'sharp';
 import { API } from '..';
-import { User } from './user';
-import { PoolConnection, ResultSetHeader } from 'mysql2/promise';
+import { kysely } from '../../db/kysely';
 import { NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
 import { IndexedDocument } from '../../lib/tiptapHelpers';
-import sharp from 'sharp';
+import { BaseOptions, perms, withTransaction } from '../utils';
+import { User } from './user';
 
 export type StoryCover = {
-  user_id: number,
   id: number,
   name: string,
   mimetype: string,
@@ -18,15 +18,15 @@ export type Story = {
   id: number,
   title: string,
   shortname: string,
-  summary: string,
+  summary: string | null,
   drafts_public: boolean,
-  author_id: number,
+  author_id: number | null,
   universe_id: number,
   created_at: Date,
   updated_at: Date,
   author: string,
   chapter_count: number,
-  chapters: { title: string, is_published: boolean, created_at: Date },
+  chapters: { [chapterNumber: number]: { title: string, is_published: boolean, created_at: Date } },
   universe: string,
   universe_short: string,
   is_published: boolean,
@@ -36,9 +36,9 @@ export type Story = {
 export type Chapter = {
   id: number,
   title: string,
-  summary: string,
+  summary: string | null,
   chapter_number: number,
-  body: IndexedDocument,
+  body: IndexedDocument | null,
   story_id: number,
   is_published: boolean,
   created_at: Date,
@@ -55,18 +55,16 @@ export class StoryCoverAPI {
   async getByShortname(user: User | undefined, shortname: string): Promise<StoryCover | undefined> {
     const story = await this.story.getOne(user, { 'story.shortname': shortname });
     if (!story) throw new NotFoundError();
-    let queryString = `
-      SELECT
-        si.story_id, image.id, image.name, image.mimetype, image.data
-      FROM storyimage AS si
-      INNER JOIN image ON image.id = si.image_id
-      WHERE si.story_id = ?;
-    `;
-    const image = (await executeQuery(queryString, [story.id]))[0] as StoryCover | undefined;
+    const image = await kysely
+      .selectFrom('storyimage as si')
+      .innerJoin('image', 'image.id', 'si.image_id')
+      .select(['image.id', 'image.name', 'image.mimetype', 'image.data'])
+      .where('si.story_id', '=', story.id)
+      .executeTakeFirst();
     return image;
   }
 
-  async post(user: User | undefined, file: Express.Multer.File | undefined, shortname: string): Promise<ResultSetHeader> {
+  async post(user: User | undefined, file: Express.Multer.File | undefined, shortname: string): Promise<{ insertId: number }> {
     if (!file) throw new ValidationError('No file provided');
 
     const { originalname, buffer, mimetype } = file;
@@ -82,34 +80,37 @@ export class StoryCoverAPI {
       .jpeg({ quality: 80 })
       .toBuffer();
 
-    let data!: ResultSetHeader;
-    await withTransaction(async (conn: PoolConnection) => {
-      await conn.execute(`
+    let data!: { insertId: number };
+    await withTransaction(async (trx) => {
+      // Kysely doesn't support DELETE-with-JOIN unfortunately
+      await sql`
         DELETE image FROM image
         INNER JOIN storyimage AS ui ON ui.image_id = image.id
-        WHERE ui.story_id = ?
-      `, [story.id]);
+        WHERE ui.story_id = ${story.id}
+      `.execute(trx);
 
-      [data] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`,
-        [originalname.substring(0, 64), mimetype, resizedBuffer],
-      );
+      const inserted = await trx
+        .insertInto('image')
+        .values({ name: originalname.substring(0, 64), mimetype, data: resizedBuffer })
+        .executeTakeFirstOrThrow();
+      data = { insertId: Number(inserted.insertId ?? 0) };
 
-      await conn.execute<ResultSetHeader>(
-        `INSERT INTO storyimage (story_id, image_id) VALUES (?, ?)`,
-        [story.id, data.insertId],
-      );
+      await trx
+        .insertInto('storyimage')
+        .values({ story_id: story.id, image_id: data.insertId })
+        .execute();
     });
     return data;
   }
 
-  async del(user: User | undefined, shortname: string): Promise<ResultSetHeader> {
+  async del(user: User | undefined, shortname: string): Promise<void> {
     const story = await this.story.getOne(user, { 'story.shortname': shortname }, perms.WRITE);
-    return await executeQuery<ResultSetHeader>(`
+    // again Kysely doesn't support DELETE-with-JOIN
+    await sql`
       DELETE image FROM image
       INNER JOIN storyimage AS ui ON ui.image_id = image.id
-      WHERE ui.story_id = ?
-    `, [story.id]);
+      WHERE ui.story_id = ${story.id}
+    `.execute(kysely);
   }
 }
 
@@ -122,14 +123,14 @@ export class StoryAPI {
     this.api = api;
   }
 
-  async getOne(user, conditions, permissionsRequired = perms.READ, options = {}): Promise<Story> {
+  async getOne(user, conditions, permissionsRequired = perms.READ, options: BaseOptions = {}): Promise<Story> {
     const stories = await this.getMany(user, conditions, permissionsRequired, options);
     const story = stories[0];
     if (!story) throw new NotFoundError();
     return story;
   }
 
-  async getMany(user, conditions: any = null, permissionsRequired = perms.READ, options: BaseOptions = {}): Promise<Story[]> {
+  async getMany(user: User | undefined, conditions: { [key: string]: any } | null = null, permissionsRequired = perms.READ, options: BaseOptions = {}): Promise<Story[]> {
     if (permissionsRequired >= perms.WRITE) {
       if (!user) throw new UnauthorizedError();
       conditions = {
@@ -138,14 +139,6 @@ export class StoryAPI {
       };
     }
 
-    const parsedConditions = parseData(conditions);
-    if (options.search) {
-      if (!conditions) conditions = {};
-      parsedConditions.strings.push('story.title LIKE ?');
-      parsedConditions.values.push(`%${options.search}%`);
-    }
-    const conditionString = conditions ? `AND ${parsedConditions.strings.join(' AND ')}` : '';
-
     if (options.sort && !options.forceSort) {
       const validSorts = { 'title': true, 'created_at': true, 'updated_at': true, 'author': true };
       if (!validSorts[options.sort]) {
@@ -153,49 +146,73 @@ export class StoryAPI {
       }
     }
 
-    const stories = await executeQuery(`
-        SELECT
-          story.*,
-          author.username AS author,
-          COUNT(sc.id) AS chapter_count,
-          JSON_REMOVE(JSON_OBJECTAGG(
-            IFNULL(sc.chapter_number, 'null__'),
-            JSON_OBJECT('title', sc.title, 'is_published', sc.is_published, 'created_at', sc.created_at)
-          ), '$.null__') AS chapters,
-          universe.title AS universe,
-          universe.shortname AS universe_short,
-          MAX(sc.is_published) AS is_published
-          ${user ? `,
-          NOT ISNULL(au_filter.universe_id) AND story.drafts_public AND NOT au_filter.user_id = story.author_id AS shared
-          ` : ''}
-        FROM story
-        LEFT JOIN storychapter AS sc ON sc.story_id = story.id
-        INNER JOIN user AS author ON author.id = story.author_id
-        INNER JOIN universe ON universe.id = story.universe_id
-        ${user ? `
-        LEFT JOIN authoruniverse AS au_filter
-          ON universe.id = au_filter.universe_id
-          AND au_filter.user_id = ?
-          AND au_filter.permission_level >= ?
-        ` : ''}
-        WHERE (is_published ${user ? `OR story.author_id = ? OR (story.drafts_public AND au_filter.universe_id IS NOT NULL)` : ''})
-        ${conditionString}
-        GROUP BY story.id${user ? ', au_filter.user_id' : ''}
-        ORDER BY ${options.sort ? `${options.sort} ${options.sortDesc ? 'DESC' : 'ASC'}` : 'updated_at DESC'}
-      `, [...(user ? [user.id, perms.WRITE, user.id] : []), ...parsedConditions?.values ?? []]) as Story[];
+    const query = kysely
+      .selectFrom('story')
+      .leftJoin('storychapter as sc', 'sc.story_id', 'story.id')
+      .innerJoin('user as author', 'author.id', 'story.author_id')
+      .innerJoin('universe', 'universe.id', 'story.universe_id')
+      .leftJoin('authoruniverse as au_filter', (join) => join
+        .onRef('universe.id', '=', 'au_filter.universe_id')
+        .on('au_filter.user_id', '=', user?.id ?? -1)
+        .on('au_filter.permission_level', '>=', perms.WRITE))
+      .select([
+        'story.id', 'story.title', 'story.shortname', 'story.summary', 'story.drafts_public',
+        'story.author_id', 'story.universe_id', 'story.created_at', 'story.updated_at',
+        'author.username as author',
+        'universe.title as universe',
+        'universe.shortname as universe_short',
+      ])
+      .select((eb) => eb.fn.count<number>('sc.id').as('chapter_count'))
+      .select(sql<{ [chapterNumber: number]: { title: string, is_published: boolean, created_at: Date } }>`
+        JSON_REMOVE(JSON_OBJECTAGG(
+          IFNULL(sc.chapter_number, 'null__'),
+          JSON_OBJECT('title', sc.title, 'is_published', sc.is_published, 'created_at', sc.created_at)
+        ), '$.null__')
+      `.as('chapters'))
+      .select(sql<boolean>`MAX(sc.is_published)`.as('is_published'))
+      .$if(user !== undefined, (qb) => qb.select(
+        sql<boolean>`NOT ISNULL(au_filter.universe_id) AND story.drafts_public AND NOT au_filter.user_id = story.author_id`.as('shared'),
+      ))
+      .where((eb) => user
+        ? eb.or([
+          eb('sc.is_published', '=', true),
+          eb('story.author_id', '=', user.id),
+          eb.and([eb('story.drafts_public', '=', true), eb('au_filter.universe_id', 'is not', null)]),
+        ])
+        : eb('sc.is_published', '=', true))
+      .$if(conditions !== null, (qb) => {
+        let q = qb;
+        for (const [key, value] of Object.entries(conditions ?? {})) {
+          if (value === undefined) continue;
+          q = q.where(kysely.dynamic.ref(key), '=', value);
+        }
+        return q;
+      })
+      .$if(options.search !== undefined && options.search !== '', (qb) => qb.where('story.title', 'like', `%${options.search}%`))
+      .groupBy(['story.id', 'au_filter.user_id'])
+      .orderBy(
+        options.sort ? kysely.dynamic.ref(options.sort) : 'story.updated_at',
+        options.sort ? (options.sortDesc ? 'desc' : 'asc') : 'desc',
+      );
+
+    const stories = await query.execute();
     return stories;
   }
 
   async getChapter(user: User | undefined, shortname: string, index: number, permissionsRequired = perms.READ): Promise<Chapter> {
     const story = await this.getOne(user, { 'story.shortname': shortname }, permissionsRequired);
 
-    const chapters = await executeQuery('SELECT * FROM storychapter WHERE story_id = ? AND chapter_number = ?', [story.id, index]) as Chapter[];
-    const chapter = chapters[0];
+    const chapter = await kysely
+      .selectFrom('storychapter')
+      .selectAll()
+      .where('story_id', '=', story.id)
+      .where('chapter_number', '=', index)
+      .executeTakeFirst();
     if (!chapter) throw new NotFoundError();
-    return chapter;
+    return { ...chapter, body: chapter.body as IndexedDocument | null };
   }
 
-  async post(user: User | undefined, payload): Promise<ResultSetHeader> {
+  async post(user: User | undefined, payload): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const { title, shortname, summary, is_public, universe: universeShort } = payload;
     if (!title) throw new ValidationError('Title is required.');
@@ -206,29 +223,35 @@ export class StoryAPI {
     const universe = await this.api.universe.getOne(user, { 'universe.shortname': universeShort }, perms.WRITE);
 
     try {
-      const data = await executeQuery<ResultSetHeader>(`
-        INSERT INTO story (title, shortname, summary, drafts_public, author_id, universe_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [title, shortname, summary ?? null, is_public, user.id, universe.id, new Date(), new Date()]);
-      return data;
+      const data = await kysely
+        .insertInto('story')
+        .values({
+          title, shortname, summary: summary ?? null, drafts_public: is_public,
+          author_id: user.id, universe_id: universe.id, created_at: new Date(), updated_at: new Date(),
+        })
+        .executeTakeFirstOrThrow();
+      return { insertId: Number(data.insertId ?? 0) };
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') throw new ValidationError(`Shortname "${shortname}" already in use in this universe, please choose another.`);
       throw err;
     }
   }
 
-  async postChapter(user: User | undefined, shortname: string, payload): Promise<[ResultSetHeader, number]> {
+  async postChapter(user: User | undefined, shortname: string, payload): Promise<[{ insertId: number }, number]> {
     if (!user) throw new UnauthorizedError();
     const { title, summary } = payload;
     if (!title) throw new ValidationError('Title is required.');
 
     const story = await this.getOne(user, { 'story.shortname': shortname }, perms.WRITE);
 
-    const data = await executeQuery<ResultSetHeader>(`
-        INSERT INTO storychapter (title, summary, chapter_number, body, story_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [title, summary ?? null, story.chapter_count + 1, null, story.id, new Date(), new Date()]);
-    return [data, story.chapter_count + 1];
+    const data = await kysely
+      .insertInto('storychapter')
+      .values({
+        title, summary: summary ?? null, chapter_number: story.chapter_count + 1, body: null,
+        story_id: story.id, created_at: new Date(), updated_at: new Date(),
+      })
+      .executeTakeFirstOrThrow();
+    return [{ insertId: Number(data.insertId ?? 0) }, story.chapter_count + 1];
   }
 
   /**
@@ -236,22 +259,20 @@ export class StoryAPI {
    */
   async reorderChapters(story, orderedIndexes) {
     const newIndexes = {};
-    const ids = (await executeQuery(`
-      SELECT
-        JSON_REMOVE(JSON_OBJECTAGG(
-          IFNULL(chapter_number, 'null__'),
-          id
-        ), '$.null__') AS ids
-      FROM storychapter
-      WHERE story_id = ?
-      GROUP BY story_id
-    `, [story.id]))[0]?.ids;
+    const ids = (await kysely
+      .selectFrom('storychapter')
+      .select(sql<{ [chapterNumber: number]: number }>`
+        JSON_REMOVE(JSON_OBJECTAGG(IFNULL(chapter_number, 'null__'), id), '$.null__')
+      `.as('ids'))
+      .where('story_id', '=', story.id)
+      .groupBy('story_id')
+      .executeTakeFirst())?.ids!;
 
-    await withTransaction(async (conn) => {
-      await conn.execute('UPDATE storychapter SET chapter_number = 0 WHERE story_id = ?', [story.id]);
+    await withTransaction(async (trx) => {
+      await trx.updateTable('storychapter').set({ chapter_number: 0 }).where('story_id', '=', story.id).execute();
       for (let i = 0; i < orderedIndexes.length; i++) {
         const oldIndex = orderedIndexes[i];
-        await conn.execute('UPDATE storychapter SET chapter_number = ? WHERE id = ?', [i + 1, ids[oldIndex]]);
+        await trx.updateTable('storychapter').set({ chapter_number: i + 1 }).where('id', '=', ids[oldIndex]).execute();
         newIndexes[ids[oldIndex]] = i + 1;
       }
     });
@@ -269,16 +290,17 @@ export class StoryAPI {
       await this.reorderChapters(story, order);
     }
     if (title || shortname || summary || drafts_public) {
-      await executeQuery(`
-          UPDATE story
-          SET
-            title = ?,
-            shortname = ?,
-            summary = ?,
-            drafts_public = ?,
-            updated_at = ?
-          WHERE id = ?
-        `, [title ?? story.title, shortname ?? story.shortname, summary ?? story.summary, drafts_public ?? story.drafts_public, new Date(), story.id]);
+      await kysely
+        .updateTable('story')
+        .set({
+          title: title ?? story.title,
+          shortname: shortname ?? story.shortname,
+          summary: summary ?? story.summary,
+          drafts_public: drafts_public ?? story.drafts_public,
+          updated_at: new Date(),
+        })
+        .where('id', '=', story.id)
+        .execute();
     }
     return shortname ?? story.shortname;
   }
@@ -305,20 +327,21 @@ export class StoryAPI {
       index = newIndexes[chapter.id];
     }
 
-    await withTransaction(async (conn) => {
-      await conn.execute(`
-          UPDATE storychapter
-          SET
-            title = ?,
-            summary = ?,
-            body = ?,
-            is_published = ?,
-            created_at = ?,
-            updated_at = ?
-          WHERE id = ?
-        `, [title ?? chapter.title, summary ?? chapter.summary, body ?? chapter.body, is_published ?? chapter.is_published, publishDate ?? chapter.created_at, new Date(), chapter.id]);
+    await withTransaction(async (trx) => {
+      await trx
+        .updateTable('storychapter')
+        .set({
+          title: title ?? chapter.title,
+          summary: summary ?? chapter.summary,
+          body: JSON.stringify(body ?? chapter.body),
+          is_published: is_published ?? chapter.is_published,
+          created_at: publishDate ?? chapter.created_at,
+          updated_at: new Date(),
+        })
+        .where('id', '=', chapter.id)
+        .execute();
 
-        await conn.execute('UPDATE story SET updated_at = ? WHERE id = ?', [new Date(), chapter.story_id]);
+      await trx.updateTable('story').set({ updated_at: new Date() }).where('id', '=', chapter.story_id).execute();
     });
     return index;
   }
@@ -326,29 +349,29 @@ export class StoryAPI {
   async del(user: User | undefined, shortname: string): Promise<void> {
     const story = await this.getOne(user, { 'story.shortname': shortname }, perms.OWNER);
 
-    await withTransaction(async (conn) => {
-      await conn.execute(`
-          DELETE comment
-          FROM comment
-          INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
-          INNER JOIN storychapter ON scc.chapter_id = storychapter.id
-          WHERE storychapter.story_id = ?;
-        `, [story.id]);
-      await conn.execute(`DELETE FROM story WHERE id = ?;`, [story.id]);
+    await withTransaction(async (trx) => {
+      await sql`
+        DELETE comment
+        FROM comment
+        INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
+        INNER JOIN storychapter ON scc.chapter_id = storychapter.id
+        WHERE storychapter.story_id = ${story.id}
+      `.execute(trx);
+      await trx.deleteFrom('story').where('id', '=', story.id).execute();
     });
   }
 
   async delChapter(user: User | undefined, shortname: string, index: number): Promise<void> {
     const chapter = await this.getChapter(user, shortname, index, perms.OWNER);
 
-    await withTransaction(async (conn) => {
-      await conn.execute(`
-          DELETE comment
-          FROM comment
-          INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
-          WHERE scc.chapter_id = ?;
-        `, [chapter.id]);
-      await conn.execute(`DELETE FROM storychapter WHERE id = ?;`, [chapter.id]);
+    await withTransaction(async (trx) => {
+      await sql`
+        DELETE comment
+        FROM comment
+        INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
+        WHERE scc.chapter_id = ${chapter.id}
+      `.execute(trx);
+      await trx.deleteFrom('storychapter').where('id', '=', chapter.id).execute();
     });
     const story = await this.getOne(user, { 'story.shortname': shortname }, perms.OWNER);
     await this.reorderChapters(story, Object.keys(story.chapters).sort((a, b) => Number(a) - Number(b)));

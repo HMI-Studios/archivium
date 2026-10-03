@@ -1,7 +1,7 @@
 import { MailerSend, EmailParams, Recipient, Sender } from 'mailersend';
 import { DOMAIN, DEV_MODE, MAILERSEND_API_KEY } from '../../config';
 import logger from '../../logger';
-import { executeQuery } from '../utils';
+import { kysely } from '../../db/kysely';
 import fs from 'fs';
 import path from 'path';
 import mjml from 'mjml';
@@ -67,7 +67,7 @@ export class EmailAPI {
       }
       logger.info('Email sent!');
       for (const to of toList) {
-        await executeQuery('INSERT INTO sentemail (recipient, topic, sent_at) VALUES (?, ?, ?);', [to, topic, new Date()]);
+        await kysely.insertInto('sentemail').values({ recipient: to, topic, sent_at: new Date() }).execute();
       }
     } catch (error) {
       logger.error(error);
@@ -108,10 +108,14 @@ export class EmailAPI {
     const now = new Date();
     const timeout = 60 * 1000;
     const cutoff = new Date(now.getTime() - timeout);
-    const recentEmails = await executeQuery(
-      'SELECT * FROM sentemail WHERE recipient = ? AND topic = ? AND sent_at >= ? ORDER BY sent_at DESC;',
-      [sessionUser.email, 'verify', cutoff],
-    );
+    const recentEmails = await kysely
+      .selectFrom('sentemail')
+      .selectAll()
+      .where('recipient', '=', sessionUser.email)
+      .where('topic', '=', 'verify')
+      .where('sent_at', '>=', cutoff)
+      .orderBy('sent_at', 'desc')
+      .execute();
     if (recentEmails.length > 0) throw new RateLimitError(new Date(recentEmails[0].sent_at.getTime() + timeout));
 
     const alreadyVerified = await this.sendVerifyLink(sessionUser);
@@ -132,10 +136,14 @@ export class EmailAPI {
     const now = new Date();
     const timeout = 60 * 1000;
     const cutoff = new Date(now.getTime() - timeout);
-    const recentEmails = await executeQuery(
-      'SELECT * FROM sentemail WHERE recipient = ? AND topic = ? AND sent_at >= ? ORDER BY sent_at DESC;',
-      [user.email, 'reset', cutoff],
-    );
+    const recentEmails = await kysely
+      .selectFrom('sentemail')
+      .selectAll()
+      .where('recipient', '=', user.email)
+      .where('topic', '=', 'reset')
+      .where('sent_at', '>=', cutoff)
+      .orderBy('sent_at', 'desc')
+      .execute();
     if (recentEmails.length > 0) throw new RateLimitError(new Date(recentEmails[0].sent_at.getTime() + timeout));
 
     const { id, username, email } = user;

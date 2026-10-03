@@ -50,7 +50,7 @@ export default {
           // .some(row => row.universes.length < tierAllowance[user.plan][row.tier])
       ) : false;
       const homePage = await api.item.getByUniverseAndItemShortnames(user, universe.shortname, '_home', perms.READ, true).catch(handleAsNull([ForbiddenError, UnauthorizedError]));
-      const renderedHomePage = homePage?.obj_data.body ? await tryRenderContent(req, homePage?.obj_data.body, universe.shortname) : null;
+      const renderedHomePage = homePage?.obj_data?.body ? await tryRenderContent(req, homePage.obj_data.body, universe.shortname) : null;
       res.prepareRender('universe', { universe, authors: authorMap, threads, counts, totalItems, stories, couldUpgrade, accessRequest, homePage: renderedHomePage });
     } catch (err) {
       // If the user is not authorized to view the universe, check if there is a public page to display instead

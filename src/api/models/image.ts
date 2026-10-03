@@ -1,5 +1,6 @@
 import { API } from '..';
-import { executeQuery } from '../utils';
+import { kysely } from '../../db/kysely';
+import { NotFoundError } from '../../errors';
 import { Image } from './item';
 import { User } from './user';
 
@@ -11,19 +12,22 @@ export class ImageAPI {
   }
 
   async get(sessionUser: User | undefined, id: number): Promise<Image> {
-    const queryString = `
-      SELECT image.*, map.item_id AS map_item, ii.item_id, si.story_id, ui.user_id
-      FROM image
-      LEFT JOIN userimage ui ON ui.image_id = image.id
-      LEFT JOIN storyimage si ON si.image_id = image.id
-      LEFT JOIN itemimage ii ON ii.image_id = image.id
-      LEFT JOIN map ON map.image_id = image.id
-      WHERE image.id = ?
-    `;
-    const image = (await executeQuery(queryString, [id]))[0];
+    const image = await kysely
+      .selectFrom('image')
+      .leftJoin('userimage as ui', 'ui.image_id', 'image.id')
+      .leftJoin('storyimage as si', 'si.image_id', 'image.id')
+      .leftJoin('itemimage as ii', 'ii.image_id', 'image.id')
+      .leftJoin('map', 'map.image_id', 'image.id')
+      .select([
+        'image.id', 'image.name', 'image.mimetype', 'image.data', 'image.preview',
+        'map.item_id as map_item', 'ii.item_id', 'si.story_id', 'ui.user_id',
+      ])
+      .where('image.id', '=', id)
+      .executeTakeFirst();
+    if (!image) throw new NotFoundError();
 
     // Make sure we have access to this image
-    const itemId = image.map_id ?? image.item_id;
+    const itemId = image.map_item ?? image.item_id;
     if (itemId) {
       await this.api.item.getOneBasic(sessionUser, { 'item.id': itemId });
     } else if (image.story_id) {
@@ -32,6 +36,6 @@ export class ImageAPI {
       // User images as always visible
     }
 
-    return image as Image;
+    return image;
   }
 }

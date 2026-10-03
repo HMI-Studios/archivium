@@ -2,7 +2,7 @@ import { generateJSON } from '@tiptap/html/server';
 import readline from 'readline';
 import db from '.';
 import { GalleryImage } from '../api/models/item';
-import { executeQuery } from '../api/utils';
+import { executeQuery } from './legacy';
 import { editorExtensions } from '../lib/editor';
 import { renderMarkdown } from '../lib/markdownRender';
 import { jsonToIndexed } from '../lib/tiptapHelpers';

@@ -1,7 +1,6 @@
 const db = require(".");
 const api = require("../api");
-const { doDeleteUser } = require("../api/new-api/models/user");
-const { executeQuery } = require("../api/utils");
+const { executeQuery } = require("./legacy");
 const { askQuestion } = require("./import");
 
 async function main() {
@@ -26,14 +25,16 @@ async function main() {
     console.error('Invalid ID, exiting.');
     return;
   }
-  const [, user] = await api.user.getOne({ 'user.id': id });
-  if (!user) {
+  let user;
+  try {
+    user = await api.user.getOne({ 'user.id': id });
+  } catch {
     console.error('No such user, exiting.');
     return;
   }
   const ans = await askQuestion(`This will PERMANENTLY DELETE ${user.username}'s account! Are you SURE? [y/N] `);
   if (ans.toUpperCase() === 'Y') {
-    await doDeleteUser(user.id);
+    await api.user.doDeleteUser(user.id);
     console.log(`User ${user.username} deleted.`)
   } else {
     const ans = await askQuestion(`Would you instead like to cancel this delete request? [y/N] `);

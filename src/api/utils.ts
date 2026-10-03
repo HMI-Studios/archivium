@@ -1,11 +1,9 @@
-import db from '../db';
-import _ from 'lodash';
-import md5 from 'md5';
-import logger from '../logger';
 import type { Request, Response } from 'express';
-import { PoolConnection, QueryResult, RowDataPacket } from 'mysql2/promise';
-import { ForbiddenError, NotFoundError, RequestError } from '../errors';
-import { User } from './models/user';
+import md5 from 'md5';
+import { RequestError } from '../errors';
+import logger from '../logger';
+import { SqlBool } from 'kysely';
+import { kysely, Trx } from '../db/kysely';
 
 export { perms } from '../lib/perms';
 
@@ -45,30 +43,19 @@ export const tierLimits: Record<Tier, TierLimit> = {
   [tiers.PREMIUM]: { images: 5_000_000_000 },
 };
 
-export type SQLValue = number | string | boolean | Date | null;
-export async function executeQuery<T extends QueryResult = RowDataPacket[]>(query: string, values: SQLValue[] = [], conn?: PoolConnection): Promise<T> {
-  const [ results ] = await (conn ?? db).execute<T>(query, values);
-  return results;
-}
-
 export class RollbackError extends Error {}
 
-export async function withTransaction(callback: (conn: PoolConnection) => Promise<void>) {
-  const connection = await db.getConnection();
+export async function withTransaction(callback: (conn: Trx) => Promise<void>) {
+  const transaction = await kysely.startTransaction().execute();
   try {
-    await connection.beginTransaction();
-
-    await callback(connection);
-
-    await connection.commit();
+    await callback(transaction);
+    await transaction.commit().execute();
   } catch (err) {
-    await connection.rollback();
+    await transaction.rollback().execute();
     logger.warn('Transaction rolled back.');
     if (!(err instanceof RollbackError)) {
       throw err;
     }
-  } finally {
-    connection.release();
   }
 }
 
@@ -91,141 +78,6 @@ export type BaseOptions = {
   select?: [string, string?, (string | string[])?][],
   join?: ['INNER' | 'LEFT' | 'RIGHT', string | [string, string], Cond?][]
 };
-
-export class QueryBuilder {
-   table: string | null;
-   selects: {};
-   selectValues: {};
-   joins: any[];
-   whereCond: Cond | null;
-   groups: {};
-   order: any[];
-   orderDesc: any[];
-   resultLimit: number | null;
-   unions: any[];
-
-   constructor() {
-    this.table = null;
-    this.selects = {};
-    this.selectValues = {};
-    this.joins = [];
-    this.whereCond = null;
-    this.groups = {};
-    this.order = [];
-    this.orderDesc = [];
-    this.resultLimit = null;
-    this.unions = [];
-   }
-
-   select(col: string, selectAs: string | null = null, value: any | any[] = null) {
-    this.selects[col] = selectAs;
-    this.selectValues[col] = value;
-    return this;
-   }
-
-   from(table) {
-    this.table = table;
-    return this;
-   }
-
-   join(type: 'INNER' | 'LEFT' | 'RIGHT', table: string | [string, string], on?: Cond) {
-    this.joins.push([type, table, on]);
-   }
-
-   innerJoin(table, on) {
-    this.join('INNER', table, on);
-    return this;
-   }
-
-   leftJoin(table, on) {
-    this.join('LEFT', table, on);
-    return this;
-   }
-
-   where(cond) {
-    if ((cond instanceof MultiCond || cond.check)) this.whereCond = cond;
-    return this;
-   }
-
-   groupBy(col) {
-    if (col instanceof Array) col.forEach(args => this.groupBy(args));
-    else this.groups[col] = true;
-    return this;
-   }
-
-   orderBy(col, orderDesc=false) {
-    this.order.push(col);
-    this.orderDesc.push(orderDesc);
-    return this;
-   }
-
-   limit(l) {
-    this.resultLimit = l;
-    return this;
-   }
-
-   union(query) {
-    this.unions.push(query);
-    return this;
-   }
-
-   compile(): [string, any[]] {
-    const selectCols = Object.keys(this.selects);
-    let queryStr = '';
-    let values: any[] = [];
-    if (selectCols.length) {
-      if (!this.table) throw 'No table specified!';
-      queryStr += `SELECT ${selectCols.map(col => {
-        if (this.selectValues[col]) {
-          if (this.selectValues[col] instanceof Array) values = [...values, ...this.selectValues[col]];
-          else values = [...values, this.selectValues[col]];
-        }
-        if (this.selects[col]) return `${col} AS ${this.selects[col]}`;
-        else return col;
-      }).join(', ')}`;
-      queryStr += ` FROM ${this.table}`;
-      for (const [type, table, on] of this.joins) {
-        const tableStr = table instanceof Array ? table.join(' AS ') : table;
-        queryStr += ` ${type} JOIN ${tableStr}`;
-        if (on && on instanceof Cond) {
-          const [str, vals] = on.export();
-          queryStr += ` ON ${str}`;
-          values = [...values, ...vals.filter(val => val !== undefined)];
-        }
-      }
-      if (this.whereCond) {
-        const [str, vals] = this.whereCond.export();
-        queryStr += ` WHERE ${str}`;
-        values = [...values, ...vals.filter(val => val !== undefined)];
-      }
-      const groupCols = Object.keys(this.groups);
-      if (groupCols.length > 0) {
-        queryStr += ` GROUP BY ${groupCols.join(', ')}`;
-      }
-      if (this.order.length) {
-        const orderStr = this.order.map((col, i) => `${col} ${this.orderDesc[i] ? 'DESC' : 'ASC'}`);
-        queryStr += ` ORDER BY ${orderStr}`;
-      }
-      if (this.resultLimit) {
-        queryStr += ` LIMIT ${this.resultLimit}`;
-      }
-    } else if (this.unions.length) {
-      const unionData = this.unions.map(query => query.compile());
-      const strs: string[] = [];
-      for (const [str, vals] of unionData) {
-        strs.push(str);
-        values = values.concat(vals);
-      }
-      queryStr += strs.join(' UNION ');
-    }
-    return [queryStr, values];
-   }
-
-   async execute() {
-    const [queryStr, values] = this.compile();
-    return await executeQuery(queryStr, values);
-   }
-}
 
 export class Cond {
   check?: string;
@@ -275,7 +127,7 @@ class MultiCond extends Cond {
   }
 }
 
-export function getPfpUrl(user: User) {
+export function getPfpUrl(user: { hasPfp: SqlBool, username: string, email: string }) {
   return user.hasPfp ? `/api/users/${user.username}/pfp` : `https://www.gravatar.com/avatar/${md5(user.email ?? '')}.jpg`;
 }
 

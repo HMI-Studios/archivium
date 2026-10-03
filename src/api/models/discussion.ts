@@ -1,7 +1,8 @@
-import { executeQuery, parseData, perms, getPfpUrl, withTransaction } from '../utils';
+import { SqlBool } from 'kysely';
+import { kysely } from '../../db/kysely';
+import { perms, getPfpUrl } from '../utils';
 import { API } from '..';
 import { User } from './user';
-import { ResultSetHeader } from 'mysql2';
 import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
 
 export type Thread = {
@@ -9,18 +10,29 @@ export type Thread = {
   title: string,
   universe_id: number,
   universe_short: string,
-  notifs_enabled?: boolean,
-  comment_count?: number,
-  first_activity?: Date,
-  last_activity?: Date,
+  notifs_enabled?: boolean | null,
+  comment_count?: number | null,
+  first_activity?: Date | null,
+  last_activity?: Date | null,
 };
 
 export type Comment = {
   id: number,
-  body: string,
-  author_id: number,
-  reply_to: number,
+  body: string | null,
+  author_id: number | null,
+  reply_to: number | null,
   created_at: Date,
+};
+
+export type CommenterUserBasic = {
+  id: number,
+  username: string,
+  email: string,
+  hasPfp: SqlBool,
+};
+
+export type CommenterUser = CommenterUserBasic & {
+  plan: number | null,
 };
 
 export class DiscussionAPI {
@@ -30,88 +42,95 @@ export class DiscussionAPI {
     this.api = api;
   }
 
-  async getThreads(user: User | undefined, options?, canPost = false, includeExtra = false): Promise<Thread[]> {
-    const parsedOptions = parseData(options);
-    const filter = user
-      ? (canPost
-        ? `
-            (universe.is_public = 1 AND universe.discussion_open)
-            OR (au_filter.user_id = ${user.id} AND (
-              (au_filter.permission_level >= ${perms.READ} AND universe.discussion_open)
-              OR au_filter.permission_level >= ${perms.COMMENT}
-            ))
-          `
-        : `
-            universe.is_public = 1 OR (au_filter.user_id = ${user.id} AND au_filter.permission_level >= ${perms.READ})
-          `)
-      : 'universe.is_public = 1';
-    const conditionString = options ? `AND ${parsedOptions.strings.join(' AND ')}` : '';
-    const queryString = `
-        SELECT
-          ${includeExtra ? 'comments.*,' : ''}
-          ${user ? 'tn.is_enabled AS notifs_enabled,' : ''}
-          discussion.*,
-          universe.shortname AS universe_short
-        FROM discussion
-        INNER JOIN universe ON universe.id = discussion.universe_id
-        INNER JOIN authoruniverse as au_filter
-          ON universe.id = au_filter.universe_id AND (
-            ${filter}
-          )
-        LEFT JOIN authoruniverse as au ON universe.id = au.universe_id
-        ${includeExtra ? `
-          LEFT JOIN (
-            SELECT DISTINCT
-              COUNT(comment.id) as comment_count,
-              MIN(comment.created_at) as first_activity,
-              MAX(comment.created_at) as last_activity,
-              tc.thread_id
-            FROM comment
-            INNER JOIN threadcomment AS tc ON tc.comment_id = comment.id
-            GROUP BY thread_id
-          ) comments ON comments.thread_id = discussion.id
-        ` : ''}
-        ${user ? `
-          LEFT JOIN threadnotification AS tn ON tn.thread_id = discussion.id AND tn.user_id = ${user.id}
-        ` : ''}
-        WHERE universe.discussion_enabled
-        ${conditionString}
-        GROUP BY discussion.id;`;
-    const data = await executeQuery(queryString, options && parsedOptions.values) as Thread[];
-    return data;
+  async getThreads(user: User | undefined, options?: Record<string, unknown>, canPost = false, includeExtra = false): Promise<Thread[]> {
+    let query = kysely
+      .selectFrom('discussion')
+      .innerJoin('universe', 'universe.id', 'discussion.universe_id')
+      .innerJoin('authoruniverse as au_filter', (join) => {
+        join = join.onRef('universe.id', '=', 'au_filter.universe_id');
+        if (!user) return join.on('universe.is_public', '=', true);
+        if (canPost) {
+          return join.on((eb) => eb.or([
+            eb.and([eb('universe.is_public', '=', true), eb('universe.discussion_open', '=', true)]),
+            eb.and([
+              eb('au_filter.user_id', '=', user.id),
+              eb.or([
+                eb.and([eb('au_filter.permission_level', '>=', perms.READ), eb('universe.discussion_open', '=', true)]),
+                eb('au_filter.permission_level', '>=', perms.COMMENT),
+              ]),
+            ]),
+          ]));
+        }
+        return join.on((eb) => eb.or([
+          eb('universe.is_public', '=', true),
+          eb.and([eb('au_filter.user_id', '=', user.id), eb('au_filter.permission_level', '>=', perms.READ)]),
+        ]));
+      })
+      .selectAll('discussion')
+      .select('universe.shortname as universe_short')
+      .where('universe.discussion_enabled', '=', true)
+      .groupBy('discussion.id')
+      .$if(includeExtra, (qb) => qb
+        .leftJoin(
+          (eb) => eb
+            .selectFrom('comment')
+            .innerJoin('threadcomment as tc', 'tc.comment_id', 'comment.id')
+            .select((eb2) => [
+              eb2.fn.count<number>('comment.id').as('comment_count'),
+              eb2.fn.min<Date>('comment.created_at').as('first_activity'),
+              eb2.fn.max<Date>('comment.created_at').as('last_activity'),
+              'tc.thread_id',
+            ])
+            .groupBy('tc.thread_id')
+            .as('comments'),
+          (join) => join.onRef('comments.thread_id', '=', 'discussion.id'),
+        )
+        .select(['comments.comment_count', 'comments.first_activity', 'comments.last_activity']))
+      .$if(user !== undefined, (qb) => qb
+        .leftJoin('threadnotification as tn', (join) => join
+          .onRef('tn.thread_id', '=', 'discussion.id')
+          .on('tn.user_id', '=', user!.id))
+        .select('tn.is_enabled as notifs_enabled'));
+
+    for (const [key, value] of Object.entries(options ?? {})) {
+      if (value === undefined) continue;
+      query = query.where(kysely.dynamic.ref(key), '=', value);
+    }
+
+    return await query.execute();
   }
 
-  /**
-   *
-   * @param {*} user
-   * @param {*} threadId
-   * @param {*} validate
-   * @param {*} inclCommenters
-   * @returns {Promise<[number, QueryResult, QueryResult?]>}
-   */
-  async getCommentsByThread(user: User | undefined, threadId: number, validate = true, inclCommenters = false): Promise<[Comment[], User[]?]> {
+  async getCommentsByThread(user: User | undefined, threadId: number, validate = true, inclCommenters = false): Promise<[Comment[], CommenterUser[]?]> {
     if (validate) {
       const threads = await this.getThreads(user, { 'discussion.id': threadId });
       const thread = threads[0];
       if (!thread) throw new NotFoundError();
     }
-    const queryString1 = `
-        SELECT comment.*
-        FROM comment
-        INNER JOIN threadcomment AS tc ON tc.comment_id = comment.id
-        WHERE tc.thread_id = ?`;
-    const comments = await executeQuery(queryString1, [threadId]) as Comment[];
+
+    const comments = await kysely
+      .selectFrom('comment')
+      .innerJoin('threadcomment as tc', 'tc.comment_id', 'comment.id')
+      .selectAll('comment')
+      .where('tc.thread_id', '=', threadId)
+      .execute();
+
     if (inclCommenters) {
-      const queryString2 = `
-          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp, userplan.plan
-          FROM user
-          INNER JOIN comment ON user.id = comment.author_id
-          INNER JOIN threadcomment AS tc ON tc.comment_id = comment.id
-          LEFT JOIN userimage AS ui ON user.id = ui.user_id
-          LEFT JOIN userplan ON user.id = userplan.user_id
-          WHERE tc.thread_id = ?
-          GROUP BY user.id, userplan.plan`;
-      const users = await executeQuery(queryString2, [threadId]) as User[];
+      const users = await kysely
+        .selectFrom('user')
+        .innerJoin('comment', 'user.id', 'comment.author_id')
+        .innerJoin('threadcomment as tc', 'tc.comment_id', 'comment.id')
+        .leftJoin('userimage as ui', 'user.id', 'ui.user_id')
+        .leftJoin('userplan', 'user.id', 'userplan.user_id')
+        .select((eb) => [
+          'user.id',
+          'user.username',
+          'user.email',
+          eb('ui.user_id', 'is not', null).as('hasPfp'),
+          'userplan.plan',
+        ])
+        .where('tc.thread_id', '=', threadId)
+        .groupBy(['user.id', 'userplan.plan'])
+        .execute();
       return [comments, users];
     }
     return [comments];
@@ -119,27 +138,25 @@ export class DiscussionAPI {
 
   /**
    * This assumes you have already validated access to the item!
-   * @param {*} itemId
-   * @param {*} inclCommenters
-   * @returns {Promise<[number, QueryResult, QueryResult?]>}
    */
-  async getCommentsByItem(itemId: number, inclCommenters = false): Promise<[Comment[], User[]?]> {
-    const queryString1 = `
-        SELECT comment.*
-        FROM comment
-        INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
-        WHERE ic.item_id = ?`;
-    const comments = await executeQuery(queryString1, [itemId]) as Comment[];
+  async getCommentsByItem(itemId: number, inclCommenters = false): Promise<[Comment[], CommenterUserBasic[]?]> {
+    const comments = await kysely
+      .selectFrom('comment')
+      .innerJoin('itemcomment as ic', 'ic.comment_id', 'comment.id')
+      .selectAll('comment')
+      .where('ic.item_id', '=', itemId)
+      .execute();
+
     if (inclCommenters) {
-      const queryString2 = `
-          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
-          FROM user
-          INNER JOIN comment ON user.id = comment.author_id
-          INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
-          LEFT JOIN userimage AS ui ON user.id = ui.user_id
-          WHERE ic.item_id = ?
-          GROUP BY user.id`;
-      const users = await executeQuery(queryString2, [itemId]) as User[];
+      const users = await kysely
+        .selectFrom('user')
+        .innerJoin('comment', 'user.id', 'comment.author_id')
+        .innerJoin('itemcomment as ic', 'ic.comment_id', 'comment.id')
+        .leftJoin('userimage as ui', 'user.id', 'ui.user_id')
+        .select((eb) => ['user.id', 'user.username', 'user.email', eb('ui.user_id', 'is not', null).as('hasPfp')])
+        .where('ic.item_id', '=', itemId)
+        .groupBy('user.id')
+        .execute();
       return [comments, users];
     }
     return [comments];
@@ -147,72 +164,73 @@ export class DiscussionAPI {
 
   /**
    * This assumes you have already validated access to the chapter!
-   * @param {*} chapterId
-   * @param {*} inclCommenters
-   * @returns {Promise<[number, QueryResult, QueryResult?]>}
    */
-  async getCommentsByChapter(chapterId: number, inclCommenters = false): Promise<[Comment[], User[]?]> {
-    const queryString1 = `
-        SELECT comment.*
-        FROM comment
-        INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
-        WHERE scc.chapter_id = ?`;
-    const comments = await executeQuery(queryString1, [chapterId]) as Comment[];
+  async getCommentsByChapter(chapterId: number, inclCommenters = false): Promise<[Comment[], CommenterUserBasic[]?]> {
+    const comments = await kysely
+      .selectFrom('comment')
+      .innerJoin('storychaptercomment as scc', 'scc.comment_id', 'comment.id')
+      .selectAll('comment')
+      .where('scc.chapter_id', '=', chapterId)
+      .execute();
+
     if (inclCommenters) {
-      const queryString2 = `
-          SELECT user.id, user.username, user.email, (ui.user_id IS NOT NULL) as hasPfp
-          FROM user
-          INNER JOIN comment ON user.id = comment.author_id
-          INNER JOIN storychaptercomment AS scc ON scc.comment_id = comment.id
-          LEFT JOIN userimage AS ui ON user.id = ui.user_id
-          WHERE scc.chapter_id = ?
-          GROUP BY user.id`;
-      const users = await executeQuery(queryString2, [chapterId]) as User[];
+      const users = await kysely
+        .selectFrom('user')
+        .innerJoin('comment', 'user.id', 'comment.author_id')
+        .innerJoin('storychaptercomment as scc', 'scc.comment_id', 'comment.id')
+        .leftJoin('userimage as ui', 'user.id', 'ui.user_id')
+        .select((eb) => ['user.id', 'user.username', 'user.email', eb('ui.user_id', 'is not', null).as('hasPfp')])
+        .where('scc.chapter_id', '=', chapterId)
+        .groupBy('user.id')
+        .execute();
       return [comments, users];
     }
     return [comments];
   }
 
-  async postUniverseThread(user: User | undefined, universeShortname: string, { title }): Promise<ResultSetHeader> {
+  async postUniverseThread(user: User | undefined, universeShortname: string, { title }): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const universe = await this.api.universe.getOne(user, { shortname: universeShortname }, perms.READ);
     if (!universe.discussion_enabled) throw new ForbiddenError();
     if (!universe.discussion_open && universe.author_permissions[user.id] < perms.COMMENT) throw new ForbiddenError();
     if (!title) throw new ValidationError('Title is required for universe discussion threads.');
 
-    const queryString = `INSERT INTO discussion (title, universe_id) VALUES (?, ?);`;
-    const data = await executeQuery<ResultSetHeader>(queryString, [title, universe.id]);
-    return data;
+    const result = await kysely
+      .insertInto('discussion')
+      .values({ title, universe_id: universe.id })
+      .executeTakeFirstOrThrow();
+
+    return { insertId: Number(result.insertId ?? 0) };
   }
 
   async forEachUserToNotify(thread: Thread, callback: (user: User) => Promise<void>): Promise<void> {
-    const targetIDs = (await executeQuery(`SELECT user_id FROM threadnotification WHERE thread_id = ? AND is_enabled`, [thread.id])).map(row => row.user_id);
-    for (const userID of targetIDs) {
-      const user = await this.api.user.getOne({ 'user.id': userID });
+    const rows = await kysely
+      .selectFrom('threadnotification')
+      .select('user_id')
+      .where('thread_id', '=', thread.id)
+      .where('is_enabled', '=', true)
+      .execute();
+    for (const { user_id } of rows) {
+      const user = await this.api.user.getOne({ 'user.id': user_id });
       await callback(user);
     }
   }
 
-  /**
-   * 
-   * @param {*} user 
-   * @param {*} threadId 
-   * @param {{ body: string, reply_to?: number }} payload 
-   * @returns {Promise<[number, QueryResult?]>}
-   */
-  async postCommentToThread(user: User | undefined, threadId: number, { body, reply_to }: { body: string, reply_to?: number }): Promise<ResultSetHeader> {
+  async postCommentToThread(user: User | undefined, threadId: number, { body, reply_to }: { body: string, reply_to?: number }): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const threads = await this.getThreads(user, { 'discussion.id': threadId }, true);
     const thread = threads[0];
     if (!thread) throw new NotFoundError();
     if (!body) throw new ValidationError('Cannot post empty comments.');
 
-    let data: ResultSetHeader;
-    await withTransaction(async (conn) => {
-      const queryString1 = `INSERT INTO comment (body, author_id, reply_to, created_at) VALUES (?, ?, ?, ?);`;
-      [data] = await conn.execute<ResultSetHeader>(queryString1, [body, user.id, reply_to ?? null, new Date()]);
-      const queryString2 = `INSERT INTO threadcomment (thread_id, comment_id) VALUES (?, ?)`;
-      await conn.execute(queryString2, [thread.id, data.insertId])
+    const insertId = await kysely.transaction().execute(async (trx) => {
+      const result = await trx
+        .insertInto('comment')
+        .values({ body, author_id: user.id, reply_to: reply_to ?? null, created_at: new Date() })
+        .executeTakeFirstOrThrow();
+      const commentId = Number(result.insertId ?? 0);
+      await trx.insertInto('threadcomment').values({ thread_id: thread.id, comment_id: commentId }).execute();
+      return commentId;
     });
 
     this.forEachUserToNotify(thread, async (target) => {
@@ -222,13 +240,13 @@ export class DiscussionAPI {
         body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${thread.universe_short}/discuss/${thread.id}`,
-      }, undefined, data.insertId);
-    })
+      }, undefined, insertId);
+    });
 
-    return data!;
+    return { insertId };
   }
 
-  async postCommentToItem(user: User | undefined, universeShortname: string, itemShortname: string, { body, reply_to }: { body: string, reply_to?: number }): Promise<ResultSetHeader> {
+  async postCommentToItem(user: User | undefined, universeShortname: string, itemShortname: string, { body, reply_to }: { body: string, reply_to?: number }): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const universe = await this.api.universe.getOne(user, { shortname: universeShortname }, perms.READ);
     if (!universe.discussion_enabled) throw new ForbiddenError();
@@ -241,12 +259,14 @@ export class DiscussionAPI {
     );
     if (!body) throw new ValidationError('Cannot post empty comments.');
 
-    let data;
-    await withTransaction(async (conn) => {
-      const queryString1 = `INSERT INTO comment (body, author_id, reply_to, created_at) VALUES (?, ?, ?, ?);`;
-      [data] = await conn.execute(queryString1, [body, user.id, reply_to ?? null, new Date()]);
-      const queryString2 = `INSERT INTO itemcomment (item_id, comment_id) VALUES (?, ?)`;
-      await conn.execute(queryString2, [item.id, data.insertId]);
+    const insertId = await kysely.transaction().execute(async (trx) => {
+      const result = await trx
+        .insertInto('comment')
+        .values({ body, author_id: user.id, reply_to: reply_to ?? null, created_at: new Date() })
+        .executeTakeFirstOrThrow();
+      const commentId = Number(result.insertId ?? 0);
+      await trx.insertInto('itemcomment').values({ item_id: item.id, comment_id: commentId }).execute();
+      return commentId;
     });
 
     await this.api.item.forEachUserToNotify(item, async (target) => {
@@ -256,24 +276,27 @@ export class DiscussionAPI {
         body: null,
         icon: getPfpUrl(user),
         clickUrl: `/universes/${universeShortname}/items/${itemShortname}`,
-      }, undefined, data.insertId);
-    })
+      }, undefined, insertId);
+    });
 
-    return data;
+    return { insertId };
   }
-  async postCommentToChapter(user: User | undefined, shortname: string, index: number, { body, reply_to }: { body: string, reply_to?: number }): Promise<ResultSetHeader> {
+
+  async postCommentToChapter(user: User | undefined, shortname: string, index: number, { body, reply_to }: { body: string, reply_to?: number }): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const story = await this.api.story.getOne(user, { 'story.shortname': shortname });
     const chapter = await this.api.story.getChapter(user, shortname, index);
     if (!chapter.is_published) throw new ForbiddenError();
     if (!body) throw new ValidationError('Cannot post empty comments.');
 
-    let data;
-    await withTransaction(async (conn) => {
-      const queryString1 = `INSERT INTO comment (body, author_id, reply_to, created_at) VALUES (?, ?, ?, ?);`;
-      [data] = await conn.execute(queryString1, [body, user.id, reply_to ?? null, new Date()]);
-      const queryString2 = `INSERT INTO storychaptercomment (chapter_id, comment_id) VALUES (?, ?)`;
-      await conn.execute(queryString2, [chapter.id, data.insertId]);
+    const insertId = await kysely.transaction().execute(async (trx) => {
+      const result = await trx
+        .insertInto('comment')
+        .values({ body, author_id: user.id, reply_to: reply_to ?? null, created_at: new Date() })
+        .executeTakeFirstOrThrow();
+      const commentId = Number(result.insertId ?? 0);
+      await trx.insertInto('storychaptercomment').values({ chapter_id: chapter.id, comment_id: commentId }).execute();
+      return commentId;
     });
 
     if (user.id !== story.author_id) {
@@ -284,23 +307,26 @@ export class DiscussionAPI {
           body: null,
           icon: getPfpUrl(user),
           clickUrl: `/stories/${story.shortname}/${chapter.chapter_number}`,
-        }, undefined, data.insertId);
+        }, undefined, insertId);
       }
     }
 
-    return data;
+    return { insertId };
   }
 
-  async subscribeToThread(user: User | undefined, threadId: number, isSubscribed: boolean): Promise<ResultSetHeader> {
+  async subscribeToThread(user: User | undefined, threadId: number, isSubscribed: boolean): Promise<{ numInsertedOrUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
     const threads = await this.getThreads(user, { 'discussion.id': threadId }, true);
     const thread = threads[0];
     if (!thread) throw new NotFoundError();
 
-    return await executeQuery<ResultSetHeader>(`
-        INSERT INTO threadnotification (thread_id, user_id, is_enabled) VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE is_enabled = ?
-      `, [thread.id, user.id, isSubscribed, isSubscribed]);
+    const result = await kysely
+      .insertInto('threadnotification')
+      .values({ thread_id: thread.id, user_id: user.id, is_enabled: isSubscribed })
+      .onDuplicateKeyUpdate({ is_enabled: isSubscribed })
+      .executeTakeFirstOrThrow();
+
+    return { numInsertedOrUpdatedRows: Number(result.numInsertedOrUpdatedRows ?? 0) };
   }
 
   async deleteThreadComment(user: User | undefined, threadId: number, commentId: number): Promise<void> {
@@ -309,17 +335,19 @@ export class DiscussionAPI {
     const thread = threads[0];
     if (!thread) throw new NotFoundError();
 
-    const comment = (await executeQuery(`
-        SELECT comment.*
-        FROM comment
-        INNER JOIN threadcomment AS tc ON tc.comment_id = comment.id
-        WHERE tc.thread_id = ? AND comment.id = ?
-      `, [thread.id, commentId]))[0];
+    const comment = await kysely
+      .selectFrom('comment')
+      .innerJoin('threadcomment as tc', 'tc.comment_id', 'comment.id')
+      .selectAll('comment')
+      .where('tc.thread_id', '=', thread.id)
+      .where('comment.id', '=', commentId)
+      .executeTakeFirst();
+    if (!comment) throw new NotFoundError();
     if (comment.author_id !== user.id) {
       await this.api.universe.getOne(user, { 'universe.shortname': thread.universe_short }, perms.ADMIN); // we need at least admin access to delete a comment that isn't ours
     }
 
-    await executeQuery('UPDATE comment SET body = NULL, author_id = NULL WHERE id = ?', [commentId]);
+    await kysely.updateTable('comment').set({ body: null, author_id: null }).where('id', '=', commentId).execute();
   }
 
   async deleteItemComment(user: User | undefined, universeShortname: string, itemShortname: string, commentId: number): Promise<void> {
@@ -333,16 +361,18 @@ export class DiscussionAPI {
       true,
     );
 
-    const comment = (await executeQuery(`
-        SELECT comment.*
-        FROM comment
-        INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
-        WHERE ic.item_id = ? AND comment.id = ?
-      `, [item.id, commentId]))[0];
+    const comment = await kysely
+      .selectFrom('comment')
+      .innerJoin('itemcomment as ic', 'ic.comment_id', 'comment.id')
+      .selectAll('comment')
+      .where('ic.item_id', '=', item.id)
+      .where('comment.id', '=', commentId)
+      .executeTakeFirst();
+    if (!comment) throw new NotFoundError();
     if (comment.author_id !== user.id) {
       await this.api.universe.getOne(user, { 'universe.shortname': item.universe_short }, perms.ADMIN); // we need at least admin access to delete a comment that isn't ours
     }
 
-    await executeQuery('UPDATE comment SET body = NULL, author_id = NULL WHERE id = ?', [commentId]);
+    await kysely.updateTable('comment').set({ body: null, author_id: null }).where('id', '=', commentId).execute();
   }
 }

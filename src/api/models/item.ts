@@ -1,11 +1,13 @@
-import { PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import sizeOf from 'buffer-image-size';
+import { sql } from 'kysely';
+import { kysely, Trx } from '../../db/kysely';
+import { condToRawSql, toRawSql } from '../../db/legacyCond';
 import api, { API } from '..';
 import { ForbiddenError, InsufficientStorageError, ModelError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
 import { extractLinkData, LinkData } from '../../lib/editor';
 import { generatePreview, previewToDataUri } from '../../lib/imagePreview';
 import { IndexedDocument, indexedToJson, updateLinks } from '../../lib/tiptapHelpers';
-import { BaseOptions, Cond, executeQuery, handleAsNull, parseData, perms, QueryBuilder, tierLimits, withTransaction } from '../utils';
+import { BaseOptions, handleAsNull, parseData, perms, tierLimits, withTransaction } from '../utils';
 import { User } from './user';
 import { deepCompare } from '../../lib/utils';
 import embedder from '../../embedding';
@@ -20,7 +22,7 @@ export type ItemOptions = BaseOptions & {
 };
 
 export type EventOptions = BaseOptions & {
-  title?: string,
+  title?: string | null,
 };
 
 export type Image = {
@@ -42,8 +44,8 @@ export type ItemImage = Image & {
 };
 
 export type ItemEvent = {
-  event_title: string,
-  abstime: number,
+  event_title: string | null,
+  abstime: number | null,
   src_shortname: string,
   src_title: string,
   src_id: number,
@@ -79,15 +81,15 @@ export type MapLocation = {
 export type Child = {
   child_shortname: string,
   child_title: string,
-  child_label: string,
-  parent_label: string,
+  child_label: string | null,
+  parent_label: string | null,
 };
 
 export type Parent = {
   parent_shortname: string,
   parent_title: string,
-  child_label: string,
-  parent_label: string,
+  child_label: string | null,
+  parent_label: string | null,
 };
 
 export type Family = {
@@ -124,15 +126,14 @@ export type BasicItem = {
   updated_at: Date,
   universe_id: number,
   vault_id: number | null,
-  author: string,
+  author: string | null,
   universe: string,
   universe_short: string,
   vault: string | null,
   vault_short: string | null,
-  notifs_enabled: boolean;
   author_id: number | null,
   tags: string[],
-  obj_data: ObjData,
+  obj_data?: ObjData,
 };
 
 export type Item = BasicItem & {
@@ -142,60 +143,8 @@ export type Item = BasicItem & {
   parents: Parent[],
   children: Child[],
   links: ItemLink[],
+  notifs_enabled: boolean,
 };
-
-function getQuery(selects: [string, string?, (string | string[])?][] = [], permsCond?: Cond, whereConds?: Cond, options: ItemOptions = {}, userId?: number) {
-  const query = new QueryBuilder()
-    .select('item.id')
-    .select('item.title')
-    .select('item.shortname')
-    .select('item.item_type')
-    .select('item.created_at')
-    .select('item.updated_at')
-    .select('item.universe_id')
-    .select('item.vault_id')
-    .select('user.username', 'author')
-    .select('universe.title', 'universe')
-    .select('universe.shortname', 'universe_short')
-    .select('vault.title', 'vault')
-    .select('vault.shortname', 'vault_short');
-
-  for (const args of selects) {
-    query.select(...args);
-  }
-
-  query
-    .select('IFNULL(tag.tags, JSON_ARRAY()) AS tags')
-    .from('item')
-    .leftJoin('user', new Cond('user.id = item.author_id'))
-    .innerJoin('universe', new Cond('universe.id = item.universe_id'))
-    .leftJoin('vault', new Cond('vault.id = item.vault_id'))
-
-  if (userId) {
-    query.leftJoin(['authoruniverse', 'au_filter'], new Cond('universe.id = au_filter.universe_id').and('au_filter.user_id = ?', userId));
-    query.leftJoin(['vaultauthor', 'va_filter'], new Cond('vault.id = va_filter.vault_id').and('va_filter.user_id = ?', userId));
-  }
-
-  query
-    .leftJoin(`(
-      SELECT item_id, JSON_ARRAYAGG(tag) as tags
-      FROM tag
-      GROUP BY item_id
-    ) tag`, new Cond('tag.item_id = item.id'))
-    .where(new Cond().and(whereConds).and(permsCond))
-    .groupBy(['item.id', 'user.username', 'universe.title', ...(options.groupBy ?? [])]);
-
-  if (options.sort) {
-    query.orderBy(options.sort, options.sortDesc);
-  } else {
-    query.orderBy('updated_at', true);
-  }
-  if (options.limit) {
-    query.limit(options.limit);
-  }
-
-  return query;
-}
 
 class MapImageAPI {
   readonly item: ItemAPI;
@@ -209,17 +158,19 @@ class MapImageAPI {
     return await this.getOneByItem(item, options);
   }
 
-  async getMany(options): Promise<MapImage[]> {
-    const parsedOptions = parseData(options);
-    let queryString = `
-      SELECT image.id, image.name, image.mimetype, image.data, map.item_id
-      FROM map
-      INNER JOIN image ON image.id = map.image_id
-      WHERE map.image_id IS NOT NULL
-    `;
-    if (options) queryString += ` AND ${parsedOptions.strings.join(' AND ')}`;
-    const images = await executeQuery(queryString, parsedOptions.values) as MapImage[];
-    return images;
+  async getMany(options: { [key: string]: any } | null): Promise<MapImage[]> {
+    let query = kysely
+      .selectFrom('map')
+      .innerJoin('image', 'image.id', 'map.image_id')
+      .select(['image.id', 'image.name', 'image.mimetype', 'image.data', 'map.item_id'])
+      .where('map.image_id', 'is not', null);
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value === undefined) continue;
+        query = query.where(kysely.dynamic.ref(key), '=', value);
+      }
+    }
+    return await query.execute();
   }
 
   /**
@@ -232,7 +183,7 @@ class MapImageAPI {
     return image;
   }
 
-  async post(user: User | undefined, file: Express.Multer.File | undefined, universeShortname: string, itemShortname: string): Promise<ResultSetHeader> {
+  async post(user: User | undefined, file: Express.Multer.File | undefined, universeShortname: string, itemShortname: string): Promise<{ insertId: number }> {
     if (!file) throw new ValidationError('Missing required fields');
     if (!user) throw new UnauthorizedError();
 
@@ -248,38 +199,47 @@ class MapImageAPI {
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
     const existingImage = await this.getOneByItem(item).catch(handleAsNull(NotFoundError));
 
-    let data!: ResultSetHeader;
-    await withTransaction(async (conn) => {
+    let data!: { insertId: number };
+    await withTransaction(async (trx) => {
       // The map row may not exist yet if the client's autosave (which persists a newly added
       // map tab) hasn't landed before this upload request arrives, so create it on demand.
-      let map = (await executeQuery('SELECT id FROM map WHERE item_id = ?', [item.id], conn))[0] as { id: number } | undefined;
+      let map = await trx.selectFrom('map').select('id').where('item_id', '=', item.id).executeTakeFirst();
       if (!map) {
-        const { insertId } = await executeQuery<ResultSetHeader>('INSERT INTO map (item_id) VALUES (?)', [item.id], conn);
-        map = { id: insertId };
+        const inserted = await trx.insertInto('map').values({ item_id: item.id }).executeTakeFirstOrThrow();
+        map = { id: Number(inserted.insertId ?? 0) };
       }
 
-      [data] = await conn.execute<ResultSetHeader>(
-        'INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)',
-        [originalname.substring(0, 64), mimetype, buffer, preview],
-      );
+      const inserted = await trx
+        .insertInto('image')
+        .values({ name: originalname.substring(0, 64), mimetype, data: buffer, preview })
+        .executeTakeFirstOrThrow();
+      data = { insertId: Number(inserted.insertId ?? 0) };
 
-      await conn.execute('UPDATE map SET image_id = ?, width = ?, height = ? WHERE id = ?', [data.insertId, width, height, map.id]);
+      await trx.updateTable('map').set({ image_id: data.insertId, width, height }).where('id', '=', map.id).execute();
 
       if (existingImage) {
-        await conn.execute(`DELETE FROM image WHERE id = ?`, [existingImage.id]);
+        await trx.deleteFrom('image').where('id', '=', existingImage.id).execute();
       }
     });
 
     return data;
   }
 
-  async del(user: User | undefined, imageId: number, conn?: PoolConnection): Promise<void> {
+  async del(user: User | undefined, imageId: number, conn?: Trx): Promise<void> {
     if (!user) throw new UnauthorizedError();
     const images = await this.getMany({ 'image.id': imageId });
     const image = images && images[0];
     if (!image) throw new NotFoundError();
     await this.item.getOne(user, { 'item.id': image.item_id }, perms.WRITE); // we need to get the item here to make sure it exists
-    await executeQuery(`DELETE FROM image WHERE id = ?`, [imageId], conn);
+    const doDelete = async (conn: Trx) => {
+      await conn.updateTable('map').set({ image_id: null }).where('image_id', '=', imageId).execute();
+      await conn.deleteFrom('image').where('id', '=', imageId).execute();
+    };
+    if (conn) {
+      await doDelete(conn);
+    } else {
+      await withTransaction(doDelete);
+    }
   }
 }
 
@@ -298,19 +258,19 @@ class ItemImageAPI {
     return image;
   }
 
-  async getMany(options, inclData = true): Promise<ItemImage[]> {
-    const parsedOptions = parseData(options);
-    let queryString = `
-      SELECT
-        image.id, itemimage.item_id, image.name, image.mimetype,
-        itemimage.label, itemimage.idx ${inclData ? ', image.data' : ''}
-      FROM itemimage
-      INNER JOIN image ON image.id = itemimage.image_id
-    `;
-    if (options) queryString += ` WHERE ${parsedOptions.strings.join(' AND ')}`;
-    queryString += ' ORDER BY itemimage.idx';
-    const images = await executeQuery(queryString, parsedOptions.values) as ItemImage[];
-    return images;
+  async getMany(options: { [key: string]: any } | null, inclData = true): Promise<ItemImage[]> {
+    let query = kysely
+      .selectFrom('itemimage')
+      .innerJoin('image', 'image.id', 'itemimage.image_id')
+      .select(['image.id', 'itemimage.item_id', 'image.name', 'image.mimetype', 'itemimage.label', 'itemimage.idx'])
+      .$if(inclData, (qb) => qb.select('image.data'));
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value === undefined) continue;
+        query = query.where(kysely.dynamic.ref(key), '=', value);
+      }
+    }
+    return await query.orderBy('itemimage.idx').execute();
   }
 
   async getManyByItemShort(user: User | undefined, universeShortname: string, itemShortname: string, options?: ItemOptions, inclData = false): Promise<ItemImage[]> {
@@ -319,7 +279,7 @@ class ItemImageAPI {
     return images;
   }
 
-  async post(user: User | undefined, file: Express.Multer.File | undefined, universeShortname: string, itemShortname: string): Promise<ResultSetHeader> {
+  async post(user: User | undefined, file: Express.Multer.File | undefined, universeShortname: string, itemShortname: string): Promise<{ insertId: number }> {
     if (!file) throw new ValidationError('Missing required fields');
     if (!user) throw new UnauthorizedError();
 
@@ -333,46 +293,49 @@ class ItemImageAPI {
     const preview = await generatePreview(buffer);
     const item = await this.item.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
 
-    let data!: ResultSetHeader;
-    await withTransaction(async (conn) => {
-      [data] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO image (name, mimetype, data, preview) VALUES (?, ?, ?, ?)`,
-        [originalname.substring(0, 64), mimetype, buffer, preview],
-      );
+    let data!: { insertId: number };
+    await withTransaction(async (trx) => {
+      const inserted = await trx
+        .insertInto('image')
+        .values({ name: originalname.substring(0, 64), mimetype, data: buffer, preview })
+        .executeTakeFirstOrThrow();
+      data = { insertId: Number(inserted.insertId ?? 0) };
 
-      await conn.execute<ResultSetHeader>(
-        `INSERT INTO itemimage (item_id, image_id, label, idx) VALUES (?, ?, ?, ?)`,
-        [item.id, data.insertId, '', 0],
-      );
+      await trx
+        .insertInto('itemimage')
+        .values({ item_id: item.id, image_id: data.insertId, label: '', idx: 0 })
+        .execute();
     });
     return data;
   }
 
-  async putLabel(user: User | undefined, imageId: number, label: string, conn?: PoolConnection): Promise<ResultSetHeader> {
+  async putLabel(user: User | undefined, imageId: number, label: string, conn?: Trx): Promise<{ numUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
     const images = await this.getMany({ id: imageId }, false) as ItemImage[];
     const image = images && images[0];
     if (!image) throw new NotFoundError();
     await this.item.getOne(user, { 'item.id': image.item_id }); // we need to get the item here to make sure it exists
-    return await executeQuery<ResultSetHeader>(`UPDATE itemimage SET label = ? WHERE image_id = ?`, [label, imageId], conn);
+    const result = await (conn ?? kysely).updateTable('itemimage').set({ label }).where('image_id', '=', imageId).executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  async putIdx(user: User | undefined, imageId: number, idx: number, conn?: PoolConnection): Promise<ResultSetHeader> {
+  async putIdx(user: User | undefined, imageId: number, idx: number, conn?: Trx): Promise<{ numUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
     const images = await this.getMany({ id: imageId }, false) as ItemImage[];
     const image = images && images[0];
     if (!image) throw new NotFoundError();
     await this.item.getOne(user, { 'item.id': image.item_id }); // we need to get the item here to make sure it exists
-    return await executeQuery<ResultSetHeader>(`UPDATE itemimage SET idx = ? WHERE image_id = ?`, [idx, imageId], conn);
+    const result = await (conn ?? kysely).updateTable('itemimage').set({ idx }).where('image_id', '=', imageId).executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  async del(user: User | undefined, imageId: number, conn?: PoolConnection): Promise<void> {
+  async del(user: User | undefined, imageId: number, conn?: Trx): Promise<void> {
     if (!user) throw new UnauthorizedError();
     const images = await this.getMany({ id: imageId }, false) as ItemImage[];
     const image = images && images[0];
     if (!image) throw new NotFoundError();
     await this.item.getOne(user, { 'item.id': image.item_id }, perms.WRITE); // we need to get the item here to make sure it exists
-    await executeQuery(`DELETE FROM image WHERE id = ?`, [imageId], conn); // itemimage will be deleted by cascade
+    await (conn ?? kysely).deleteFrom('image').where('id', '=', imageId).execute(); // itemimage will be deleted by cascade
   }
 }
 
@@ -409,73 +372,80 @@ export class ItemAPI {
       parents: [],
       children: [],
       links: [],
+      notifs_enabled: false,
     };
 
-    const events = await executeQuery(`
-      SELECT DISTINCT
-        itemevent.event_title, itemevent.abstime,
-        item.shortname AS src_shortname, item.title AS src_title, item.id AS src_id
-      FROM itemevent
-      LEFT JOIN timelineitem ON timelineitem.event_id = itemevent.id
-      INNER JOIN item ON itemevent.item_id = item.id
-      WHERE itemevent.item_id = ? OR timelineitem.timeline_id = ?
-      ORDER BY itemevent.abstime DESC
-    `, [item.id, item.id]);
-    item.events = events as ItemEvent[];
+    const events = await kysely
+      .selectFrom('itemevent')
+      .leftJoin('timelineitem', 'timelineitem.event_id', 'itemevent.id')
+      .innerJoin('item', 'item.id', 'itemevent.item_id')
+      .distinct()
+      .select([
+        'itemevent.event_title', 'itemevent.abstime',
+        'item.shortname as src_shortname', 'item.title as src_title', 'item.id as src_id',
+      ])
+      .where((eb) => eb.or([
+        eb('itemevent.item_id', '=', item.id),
+        eb('timelineitem.timeline_id', '=', item.id),
+      ]))
+      .orderBy('itemevent.abstime', 'desc')
+      .execute();
+    item.events = events;
 
-    const map = (await executeQuery(`
-      SELECT
-        map.id, map.width, map.height, map.image_id, mapimage.preview,
+    const map = await kysely
+      .selectFrom('map')
+      .leftJoin('image as mapimage', 'mapimage.id', 'map.image_id')
+      .leftJoin('maplocation as loc', 'loc.map_id', 'map.id')
+      .leftJoin('item as locitem', 'locitem.id', 'loc.item_id')
+      .leftJoin('universe as locuniverse', 'locuniverse.id', 'locitem.universe_id')
+      .select(['map.id', 'map.width', 'map.height', 'map.image_id', 'mapimage.preview'])
+      .select(sql<MapLocation[]>`
         JSON_ARRAYAGG(JSON_OBJECT(
           'id', loc.id,
           'title', loc.title,
-          'universe', universe.shortname,
-          'item', item.shortname,
-          'itemTitle', item.title,
+          'universe', locuniverse.shortname,
+          'item', locitem.shortname,
+          'itemTitle', locitem.title,
           'x', loc.x,
           'y', loc.y
-        )) as locations
-      FROM map
-      LEFT JOIN image AS mapimage ON mapimage.id = map.image_id
-      LEFT JOIN maplocation AS loc ON loc.map_id = map.id
-      LEFT JOIN item ON item.id = loc.item_id
-      LEFT JOIN universe ON universe.id = item.universe_id
-      WHERE map.item_id = ?
-      GROUP BY map.id
-    `, [item.id]))[0] ?? null;
+        ))
+      `.as('locations'))
+      .where('map.item_id', '=', item.id)
+      .groupBy('map.id')
+      .executeTakeFirst() ?? null;
     if (map?.locations.length === 1 && map.locations[0].id === null) {
       map.locations = [];
     }
-    if (map) map.preview = previewToDataUri(map.preview);
-    item.map = map as Map | null;
+    item.map = map ? { ...map, preview: previewToDataUri(map.preview) } : null;
 
-    const gallery = await executeQuery(`
-      SELECT
-        image.id, image.name, itemimage.label, image.preview
-      FROM itemimage
-      INNER JOIN image ON image.id = itemimage.image_id
-      WHERE itemimage.item_id = ?
-      ORDER BY itemimage.idx
-    `, [item.id]) as (Omit<GalleryImage, 'preview'> & { preview: Buffer | null })[];
+    const gallery = await kysely
+      .selectFrom('itemimage')
+      .innerJoin('image', 'image.id', 'itemimage.image_id')
+      .select(['image.id', 'image.name', 'itemimage.label', 'image.preview'])
+      .where('itemimage.item_id', '=', item.id)
+      .orderBy('itemimage.idx')
+      .execute();
     item.gallery = gallery.map((img) => ({ ...img, preview: previewToDataUri(img.preview) }));
 
     [item.parents, item.children] = await this.getLineage(item);
 
-    const links = await executeQuery(`
-      SELECT DISTINCT item.id, item.shortname, item.title, universe.shortname AS universe_short
-      FROM itemlink
-      INNER JOIN item ON item.id = itemlink.from_item
-      INNER JOIN universe ON item.universe_id = universe.id
-      WHERE itemlink.to_universe_short = ? AND itemlink.to_item_short = ?
-    `, [item.universe_short, item.shortname]);
-    item.links = links as ItemLink[];
+    const links = await kysely
+      .selectFrom('itemlink')
+      .innerJoin('item as li', 'li.id', 'itemlink.from_item')
+      .innerJoin('universe as lu', 'lu.id', 'li.universe_id')
+      .distinct()
+      .select(['li.id', 'li.shortname', 'li.title', 'lu.shortname as universe_short'])
+      .where('itemlink.to_universe_short', '=', item.universe_short)
+      .where('itemlink.to_item_short', '=', item.shortname)
+      .execute();
+    item.links = links;
 
     if (item.obj_data) {
-      const links = await executeQuery(`
-        SELECT to_universe_short, to_item_short, href
-        FROM itemlink
-        WHERE from_item = ?
-      `, [item.id]);
+      const links = await kysely
+        .selectFrom('itemlink')
+        .select(['to_universe_short', 'to_item_short', 'href'])
+        .where('from_item', '=', item.id)
+        .execute();
       if (item.obj_data.body) {
         const linkMap = {};
         for (const { to_universe_short, to_item_short, href } of links) {
@@ -502,46 +472,20 @@ export class ItemAPI {
     }
 
     if (user) {
-      const notifs = await executeQuery(`
-        SELECT 1 FROM itemnotification WHERE item_id = ? AND user_id = ? AND is_enabled
-      `, [item.id, user.id]);
-      item.notifs_enabled = notifs.length === 1;
+      const notif = await kysely
+        .selectFrom('itemnotification')
+        .select(sql<number>`1`.as('one'))
+        .where('item_id', '=', item.id)
+        .where('user_id', '=', user.id)
+        .where('is_enabled', '=', true)
+        .executeTakeFirst();
+      item.notifs_enabled = notif !== undefined;
     }
 
     return item;
   }
 
   async getMany(user: User | undefined, conditions, permissionsRequired = perms.READ, options: ItemOptions = {}): Promise<BasicItem[]> {
-    if (options.type) {
-      if (!conditions) conditions = { strings: [], values: [] };
-      conditions.strings.push('item.item_type = ?');
-      conditions.values.push(options.type);
-    }
-
-    if (options.tag) {
-      if (!conditions) conditions = { strings: [], values: [] };
-      conditions.strings.push('? IN (SELECT tag FROM tag WHERE item_id = item.id)');
-      conditions.values.push(options.tag);
-    }
-
-    if (options.universe) {
-      if (!conditions) conditions = { strings: [], values: [] };
-      conditions.strings.push('universe.shortname = ?');
-      conditions.values.push(options.universe);
-    }
-
-    if (options.vault) {
-      if (!conditions) conditions = { strings: [], values: [] };
-      conditions.strings.push('vault.shortname = ?');
-      conditions.values.push(options.vault);
-    }
-
-    if (options.author) {
-      if (!conditions) conditions = { strings: [], values: [] };
-      conditions.strings.push('user.username = ?');
-      conditions.values.push(options.author);
-    }
-
     if (options.sort && !options.forceSort) {
       const validSorts = { 'title': true, 'created_at': true, 'updated_at': true, 'author': true, 'item_type': true };
       if (!validSorts[options.sort]) {
@@ -551,89 +495,131 @@ export class ItemAPI {
 
     if (!user && permissionsRequired > perms.READ) throw new ValidationError('User is required to access at above read-only permissions.');
 
-    // Start cond as false by definition so access is denied instead of allowed by default
-    let permsCond = new Cond('item.id IS NULL');
+    let query = kysely
+      .selectFrom('item')
+      .leftJoin('user', 'user.id', 'item.author_id')
+      .innerJoin('universe', 'universe.id', 'item.universe_id')
+      .leftJoin('vault', 'vault.id', 'item.vault_id')
+      .leftJoin('authoruniverse as au_filter', (join) => join
+        .onRef('universe.id', '=', 'au_filter.universe_id')
+        .on('au_filter.user_id', '=', user?.id ?? -1))
+      .leftJoin('vaultauthor as va_filter', (join) => join
+        .onRef('vault.id', '=', 'va_filter.vault_id')
+        .on('va_filter.user_id', '=', user?.id ?? -1))
+      .leftJoin(
+        (eb) => eb
+          .selectFrom('tag')
+          .select((eb2) => [eb2.fn<string>('JSON_ARRAYAGG', [eb2.ref('tag.tag')]).as('tags')])
+          .select('tag.item_id')
+          .groupBy('tag.item_id')
+          .as('tag_agg'),
+        (join) => join.onRef('tag_agg.item_id', '=', 'item.id'),
+      )
+      .select([
+        'item.id',
+        'item.title',
+        'item.shortname',
+        'item.item_type',
+        'item.created_at',
+        'item.updated_at',
+        'item.universe_id',
+        'item.vault_id',
+        'item.author_id',
+        'user.username as author',
+        'universe.title as universe',
+        'universe.shortname as universe_short',
+        'vault.title as vault',
+        'vault.shortname as vault_short',
+      ])
+      .select(sql<string[]>`IFNULL(tag_agg.tags, JSON_ARRAY())`.as('tags'))
 
-    if (permissionsRequired <= perms.READ) permsCond = permsCond.or(
-      new Cond('item.vault_id IS NULL').and('universe.is_public = ?', 1)
-    );
-    if (user) {
-      permsCond = permsCond.or(
-        new Cond('item.vault_id IS NULL').and('au_filter.permission_level >= ?', permissionsRequired)
-      );
-      permsCond = permsCond.or(
-        new Cond('item.vault_id IS NOT NULL').and('va_filter.permission_level >= ?', permissionsRequired)
-      );
-      permsCond = permsCond.or(
-        new Cond('item.vault_id IS NOT NULL').and('au_filter.permission_level >= ?', perms.OWNER)
-      );
-    }
+      // at least one of these OR branches is always applicable by the time we get here
+      .where((eb) => eb.or([
+        ...(permissionsRequired <= perms.READ ? [eb.and([
+          eb('item.vault_id', 'is', null),
+          eb('universe.is_public', '=', true),
+        ])] : []),
+        ...(user ? [
+          eb.and([eb('item.vault_id', 'is', null), eb('au_filter.permission_level', '>=', permissionsRequired)]),
+          eb.and([eb('item.vault_id', 'is not', null), eb('va_filter.permission_level', '>=', permissionsRequired)]),
+          eb.and([eb('item.vault_id', 'is not', null), eb('au_filter.permission_level', '>=', perms.OWNER)]),
+        ] : []),
+      ]))
 
-    let whereConds = new Cond();
+      .groupBy(['item.id', 'user.username', 'universe.title'])
+      .$if(options.type !== undefined && options.type !== '', (qb) => qb.where('item.item_type', '=', options.type!))
+      .$if(options.tag !== undefined && options.tag !== '', (qb) => qb.where((eb) => eb.exists(
+        eb.selectFrom('tag as tag_filter')
+          .select('tag_filter.item_id')
+          .whereRef('tag_filter.item_id', '=', 'item.id')
+          .where('tag_filter.tag', '=', options.tag!),
+      )))
+      .$if(options.universe !== undefined && options.universe !== '', (qb) => qb.where('universe.shortname', '=', options.universe!))
+      .$if(options.vault !== undefined && options.vault !== '', (qb) => qb.where('vault.shortname', '=', options.vault!))
+      .$if(options.author !== undefined && options.author !== '', (qb) => qb.where('user.username', '=', options.author!))
+      .$if(options.includeData === true, (qb) => qb.select('item.obj_data'))
+      .$if(options.search !== undefined && options.search !== '', (qb) => {
+        const search = options.search!;
+        const textExpr = sql<string | null>`CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_general_ci`;
+        return qb
+          .leftJoin('tag as search_tag', (join) => join.onRef('search_tag.item_id', '=', 'item.id'))
+          .where((eb) => eb.or([
+            eb('item.title', 'like', `%${search}%`),
+            eb('item.shortname', 'like', `%${search}%`),
+            eb('search_tag.tag', '=', search),
+            eb('search_tag.tag', 'like', `%${search}%`),
+            sql<boolean>`${textExpr} LIKE ${`%${search}%`}`,
+          ]))
+          .select(sql<number>`LOCATE(${search}, ${textExpr})`.as('match_pos'))
+          .select(sql<string | null>`
+            CASE
+              WHEN LOCATE(${search}, ${textExpr}) > 0
+              THEN SUBSTRING(${textExpr}, GREATEST(1, LOCATE(${search}, ${textExpr}) - 50), 100)
+              ELSE NULL
+            END
+          `.as('snippet'));
+      });
+
+
+    // TODO even more condition hacking we want to get rid of
+    let bridged: any = query;
     if (conditions) {
       for (let i = 0; i < conditions.strings.length; i++) {
-        whereConds = whereConds.and(conditions.strings[i], conditions.values[i]);
+        bridged = bridged.where(toRawSql<boolean>(conditions.strings[i], [conditions.values[i]]));
       }
     }
-    if (options.where) whereConds = whereConds.and(options.where);
-
-    const selects: [string, string?, (string | string[])?][] = [
-      ...(options.select ?? []),
-      ...(options.includeData ? [['item.obj_data']] : []) as [string][],
-    ];
-
-    const joins = [
-      ...(options.join ?? []),
-    ];
-
-    if (options.search) {
-      const searchCond = new Cond('item.title LIKE ?', `%${options.search}%`)
-        .or('item.shortname LIKE ?', `%${options.search}%`)
-        .or('search_tag.tag = ?', options.search)
-        .or('search_tag.tag LIKE ?', `%${options.search}%`)
-        .or(`
-          CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4)
-            COLLATE utf8mb4_general_ci LIKE ?
-        `, `%${options.search}%`);
-      whereConds = whereConds.and(searchCond);
-      selects.push([`
-        LOCATE(
-          ?,
-          CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4)
-            COLLATE utf8mb4_general_ci
-        ) AS match_pos`, undefined, options.search]);
-      selects.push([`
-          CASE
-            WHEN LOCATE(
-              ?,
-              CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4)
-                COLLATE utf8mb4_general_ci
-            ) > 0
-            THEN SUBSTRING(
-              CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4),
-              GREATEST(
-                1,
-                LOCATE(
-                  ?,
-                  CAST(JSON_UNQUOTE(JSON_EXTRACT(item.obj_data, '$.body.text')) AS CHAR CHARACTER SET utf8mb4)
-                    COLLATE utf8mb4_general_ci
-                ) - 50
-              ),
-              100
-            )
-            ELSE NULL
-          END AS snippet`,
-        undefined, [options.search, options.search],
-      ]);
+    if (options.where) {
+      const raw = condToRawSql(options.where);
+      if (raw) bridged = bridged.where(raw);
     }
-    const query = getQuery(selects, permsCond, whereConds, options, user?.id);
-    for (const join of joins) {
-      query.join(...join);
+    for (const [joinType, table, onCond] of options.join ?? []) {
+      const tableExpr = Array.isArray(table) ? `${table[0]} as ${table[1]}` : table;
+      const method = joinType === 'INNER' ? 'innerJoin' : joinType === 'LEFT' ? 'leftJoin' : 'rightJoin';
+      const raw = condToRawSql(onCond);
+      bridged = bridged[method](tableExpr, (join: any) => (raw ? join.on(raw) : join));
     }
-    if (options.search) {
-      query.leftJoin(['tag', 'search_tag'], new Cond('search_tag.item_id = item.id'));
+    for (const [col, alias, value] of options.select ?? []) {
+      if (!alias) continue;
+      const values = value === undefined ? [] : (Array.isArray(value) ? value : [value]);
+      bridged = bridged.select(toRawSql(col, values).as(alias));
     }
-    const data = await query.execute() as BasicItem[];
+    if (options.groupBy?.length) {
+      bridged = bridged.groupBy(options.groupBy.map((col) => kysely.dynamic.ref(col)));
+    }
+    query = bridged as typeof query;
+
+
+    query = options.sort
+      ? query.orderBy(
+        options.forceSort ? sql.raw(options.sort) : kysely.dynamic.ref(options.sort),
+        options.sortDesc ? 'desc' : 'asc',
+      )
+      : query.orderBy('item.updated_at', 'desc');
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+
+    const data = await query.execute();
 
     return data;
   }
@@ -703,13 +689,14 @@ export class ItemAPI {
 
   // TODO if we decide not to premium-gate custom tabs, this will no longer be needed
   async getLayoutTabUsage(universeId: number): Promise<{ [tabTypeId: string]: number }> {
-    const rows = await executeQuery(`
+    // TODO JSON_TABLE has no Kysely equivalent - can we use something else?
+    const { rows } = await sql<{ id: string, count: number }>`
       SELECT tab.id, COUNT(*) AS count
       FROM item,
       JSON_TABLE(JSON_KEYS(item.obj_data, '$.layoutTabs'), '$[*]' COLUMNS (id VARCHAR(255) PATH '$')) AS tab
-      WHERE item.universe_id = ?
+      WHERE item.universe_id = ${universeId}
       GROUP BY tab.id
-    `, [universeId]) as { id: string, count: number }[];
+    `.execute(kysely);
     return rows.reduce((acc, { id, count }) => ({ ...acc, [id]: Number(count) }), {});
   }
 
@@ -744,7 +731,13 @@ export class ItemAPI {
       if (!(universe.author_permissions[user.id] >= perms.READ)) throw new ForbiddenError();
     }
 
-    const data = await executeQuery('SELECT item_type, COUNT(*) AS count FROM item WHERE universe_id = ? GROUP BY item_type', [universe.id]);
+    const data = await kysely
+      .selectFrom('item')
+      .select('item_type')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('universe_id', '=', universe.id)
+      .groupBy('item_type')
+      .execute();
     const counts = {};
     let total = 0;
     for (const row of data) {
@@ -755,14 +748,19 @@ export class ItemAPI {
   }
 
   async forEachUserToNotify(item, callback): Promise<void> {
-    const targetIDs = (await executeQuery(`SELECT user_id FROM itemnotification WHERE item_id = ? AND is_enabled`, [item.id])).map(row => row.user_id);
+    const targetIDs = (await kysely
+      .selectFrom('itemnotification')
+      .select('user_id')
+      .where('item_id', '=', item.id)
+      .where('is_enabled', '=', true)
+      .execute()).map(row => row.user_id);
     for (const userID of targetIDs) {
       const user = await this.api.user.getOne({ 'user.id': userID });
       await callback(user);
     }
   }
 
-  async post(user: User | undefined, body, universeShortName: string): Promise<ResultSetHeader> {
+  async post(user: User | undefined, body, universeShortName: string): Promise<{ insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const { title, shortname, item_type, parent_id, obj_data, skipValidation, vault: vaultShortname } = body;
 
@@ -779,51 +777,43 @@ export class ItemAPI {
         ? await this.api.vault.getOne(user, { strings: ['vault.shortname = ?', 'vault.universe_id = ?'], values: [vaultShortname, universe.id] }, perms.WRITE)
         : null;
 
-      let data: ResultSetHeader | undefined;
-      await withTransaction(async (conn) => {
-        const queryString = `
-          INSERT INTO item (
+      let insertId: number | undefined;
+      await withTransaction(async (trx) => {
+        const result = await trx
+          .insertInto('item')
+          .values({
             title,
             shortname,
             item_type,
-            author_id,
-            universe_id,
-            parent_id,
-            obj_data,
-            created_at,
-            updated_at,
-            vault_id
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        `;
-        [data] = await conn.execute<ResultSetHeader>(queryString, [
-          title,
-          shortname,
-          item_type,
-          user.id,
-          universe.id,
-          parent_id ?? null,
-          obj_data,
-          new Date(),
-          new Date(),
-          vault?.id ?? null,
-        ]);
+            author_id: user.id,
+            universe_id: universe.id,
+            parent_id: parent_id ?? null,
+            // TODO long term we want to only deal in JSON here, not strings
+            obj_data: typeof obj_data === 'string' ? obj_data : JSON.stringify(obj_data),
+            created_at: new Date(),
+            updated_at: new Date(),
+            vault_id: vault?.id ?? null,
+          })
+          .executeTakeFirstOrThrow();
+        insertId = Number(result.insertId);
 
-        await conn.execute(`
-          INSERT INTO itemnotification (item_id, user_id, is_enabled) VALUES (?, ?, ?)
-        `, [data.insertId, user.id, true]);
+        await trx
+          .insertInto('itemnotification')
+          .values({ item_id: insertId, user_id: user.id, is_enabled: true })
+          .execute();
 
-        this.api.universe.putUpdatedAtWithTransaction(conn, universe.id, new Date());
+        this.api.universe.putUpdatedAtWithTransaction(trx, universe.id, new Date());
       });
 
-      if (!data) {
+      if (insertId === undefined) {
         throw new ModelError('Failed to insert item');
       }
 
       if (universe.obj_data.semanticSearchEnabled) {
-        embedder.addJob({ type: 'check', itemId: data.insertId });
+        embedder.addJob({ type: 'check', itemId: insertId });
       }
 
-      return data;
+      return { insertId };
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') throw new ValidationError(`Shortname "${shortname}" already in use in this universe, please choose another.`);
       throw err;
@@ -832,7 +822,7 @@ export class ItemAPI {
 
   async save(user: User | undefined, universeShortname: string, itemShortname: string, body: Partial<Item>): Promise<number> {
     let item!: Item;
-    await withTransaction(async (conn) => {
+    await withTransaction(async (trx) => {
       // Actually save item
       const changes = {
         title: body.title,
@@ -842,7 +832,7 @@ export class ItemAPI {
         tags: body.tags ?? [],
         vault_short: body.vault_short,
       };
-      const itemId = await this.put(user, universeShortname, itemShortname, changes, conn);
+      const itemId = await this.put(user, universeShortname, itemShortname, changes, trx);
 
       item = await this.getOne(user, { 'item.id': itemId }, perms.WRITE);
 
@@ -865,7 +855,7 @@ export class ItemAPI {
             || existingParents[parent_shortname].child_label !== child_label
           ) {
             dataChanged = true;
-            await this.putLineage(parent.id, item.id, parent_label ?? null, child_label ?? null, conn);
+            await this.putLineage(parent.id, item.id, parent_label ?? null, child_label ?? null, trx);
           }
         }
         for (const { child_shortname, parent_label, child_label } of body.children ?? []) {
@@ -878,21 +868,21 @@ export class ItemAPI {
             || existingChildren[child_shortname].child_label !== child_label
           ) {
             dataChanged = true;
-            await this.putLineage(item.id, child.id, parent_label ?? null, child_label ?? null, conn);
+            await this.putLineage(item.id, child.id, parent_label ?? null, child_label ?? null, trx);
           }
         }
         for (const { parent_shortname } of item.parents) {
           if (!newParents[parent_shortname]) {
             const parent = await this.getByUniverseAndItemShortnames(user, universeShortname, parent_shortname, perms.WRITE);
             dataChanged = true;
-            await this.delLineage(parent.id, item.id, conn);
+            await this.delLineage(parent.id, item.id, trx);
           }
         }
         for (const { child_shortname } of item.children) {
           if (!newChildren[child_shortname]) {
             const child = await this.getByUniverseAndItemShortnames(user, universeShortname, child_shortname, perms.WRITE);
             dataChanged = true;
-            await this.delLineage(item.id, child.id, conn);
+            await this.delLineage(item.id, child.id, trx);
           }
         }
       }
@@ -903,19 +893,19 @@ export class ItemAPI {
         const myImports = body.events?.filter(event => event.src_id !== item.id);
         if (myEvents) {
           const events = await this.fetchEvents(item.id);
-          const existingEvents = events.reduce((acc, event) => ({ ...acc, [event.event_title ?? null]: event }), {});
-          const newEvents = myEvents.filter(event => !existingEvents[event.event_title]);
-          const updatedEvents = myEvents.filter(event => existingEvents[event.event_title] && (
-            existingEvents[event.event_title].event_title !== event.event_title
-            || existingEvents[event.event_title].abstime !== event.abstime
-          )).map(({ event_title, abstime }) => ({ event_title, abstime, id: existingEvents[event_title].id }));
-          const newEventMap = myEvents.reduce((acc, event) => ({ ...acc, [event.event_title ?? null]: true }), {});
-          const deletedEvents = events.filter(event => !newEventMap[event.event_title]).map(event => event.id);
-          await this.insertEvents(item.id, newEvents, conn);
+          const existingEvents = new Map(events.map((event) => [event.event_title, event]));
+          const newEvents = myEvents.filter(event => !existingEvents.has(event.event_title));
+          const updatedEvents = myEvents.filter(event => {
+            const existing = existingEvents.get(event.event_title);
+            return existing && (existing.event_title !== event.event_title || existing.abstime !== event.abstime);
+          }).map(({ event_title, abstime }) => ({ event_title, abstime, id: existingEvents.get(event_title)!.id }));
+          const newEventTitles = new Set(myEvents.map(event => event.event_title));
+          const deletedEvents = events.filter(event => !newEventTitles.has(event.event_title)).map(event => event.id);
+          await this.insertEvents(item.id, newEvents, trx);
           for (const event of updatedEvents) {
-            await this.updateEvent(event.id, event, conn);
+            await this.updateEvent(event.id, event, trx);
           }
-          await this.deleteEvents(deletedEvents, conn);
+          await this.deleteEvents(deletedEvents, trx);
           if (newEvents.length > 0 || updatedEvents.length > 0 || deletedEvents.length > 0) {
             dataChanged = true;
           }
@@ -935,8 +925,8 @@ export class ItemAPI {
             importsMap[event.id] = true;
           }
           const deletedImports = imports.filter(ti => !importsMap[ti.event_id]).map(ti => ti.event_id);
-          await this.importEvents(item.id, newImports, conn);
-          await this.deleteImports(item.id, deletedImports, conn);
+          await this.importEvents(item.id, newImports, trx);
+          await this.deleteImports(item.id, deletedImports, trx);
           if (newImports.length > 0 || deletedImports.length > 0) {
             dataChanged = true;
           }
@@ -955,17 +945,17 @@ export class ItemAPI {
           newImages[img.id] = img;
           if (img.label !== undefined && oldImages[img.id] && img.label !== oldImages[img.id].label) {
             dataChanged = true;
-            await this.image.putLabel(user, img.id, img.label, conn);
+            await this.image.putLabel(user, img.id, img.label, trx);
           }
           if (oldImages[img.id] && i !== oldImages[img.id].idx) {
             dataChanged = true;
-            await this.image.putIdx(user, img.id, i, conn);
+            await this.image.putIdx(user, img.id, i, trx);
           }
         }));
         for (const img of existingImages ?? []) {
           if (!newImages[img.id]) {
             dataChanged = true;
-            await this.image.del(user, img.id, conn);
+            await this.image.del(user, img.id, trx);
           }
         }
       }
@@ -976,7 +966,7 @@ export class ItemAPI {
         let mapId: number;
         if (body.map.id === null) {
           dataChanged = true;
-          mapId = await this.insertMap(item.id, body.map, conn);
+          mapId = await this.insertMap(item.id, body.map, trx);
         } else {
           mapId = body.map.id;
         }
@@ -998,7 +988,7 @@ export class ItemAPI {
           const targetItem = (loc.item && loc.universe) 
             ? await this.getByUniverseAndItemShortnames(user, loc.universe, loc.item, perms.READ, true)
             : null;
-          await this.insertLocation(mapId, loc, targetItem?.id ?? null, conn);
+          await this.insertLocation(mapId, loc, targetItem?.id ?? null, trx);
         }
         for (const loc of updatedLocations) {
           let targetItemId: number | null | undefined = undefined;
@@ -1010,7 +1000,7 @@ export class ItemAPI {
               targetItemId = null;
             }
           }
-          await this.updateLocation(loc, targetItemId, conn);
+          await this.updateLocation(loc, targetItemId, trx);
         }
         for (const locId in deletedLocations) {
           await this.deleteLocation(Number(locId));
@@ -1021,7 +1011,7 @@ export class ItemAPI {
       }
 
       if (dataChanged) {
-        this.markUpdated(item.id, conn);
+        this.markUpdated(item.id, trx);
       }
     });
 
@@ -1036,38 +1026,49 @@ export class ItemAPI {
     return item.id;
   }
 
-  async insertMap(itemId: number, map: Map, conn?: PoolConnection): Promise<number> {
-    const { insertId } = await executeQuery<ResultSetHeader>(`
-      INSERT INTO map (width, height, image_id, item_id) VALUES (?, ?, ?, ?)
-    `, [map.width, map.height, map.image_id ?? null, itemId], conn);
-    return insertId;
+  async insertMap(itemId: number, map: Map, conn?: Trx): Promise<number> {
+    const inserted = await (conn ?? kysely)
+      .insertInto('map')
+      .values({ width: map.width, height: map.height, image_id: map.image_id ?? null, item_id: itemId })
+      .executeTakeFirstOrThrow();
+    return Number(inserted.insertId ?? 0);
   }
   async fetchLocations(mapId: number): Promise<MapLocation[]> {
-    let queryString = `SELECT * FROM maplocation WHERE map_id = ?`;
-    const values: (string | number)[] = [mapId];
-    return await executeQuery(queryString, values) as MapLocation[];
+    const rows = await kysely
+      .selectFrom('maplocation')
+      .leftJoin('item as locitem', 'locitem.id', 'maplocation.item_id')
+      .leftJoin('universe as locuniverse', 'locuniverse.id', 'locitem.universe_id')
+      .select([
+        'maplocation.id', 'maplocation.title', 'maplocation.x', 'maplocation.y',
+        'locuniverse.shortname as universe', 'locitem.shortname as item', 'locitem.title as itemTitle',
+      ])
+      .where('map_id', '=', mapId)
+      .execute();
+    return rows;
   }
-  async insertLocation(mapId: number, loc: MapLocation, itemId: number | null, conn?: PoolConnection): Promise<void> {
-    await executeQuery<ResultSetHeader>(`
-      INSERT INTO maplocation (map_id, item_id, title, x, y) VALUES (?, ?, ?, ?, ?)
-    `, [mapId, itemId, loc.title, loc.x, loc.y], conn);
+  async insertLocation(mapId: number, loc: MapLocation, itemId: number | null, conn?: Trx): Promise<void> {
+    await (conn ?? kysely)
+      .insertInto('maplocation')
+      .values({ map_id: mapId, item_id: itemId, title: loc.title, x: loc.x, y: loc.y })
+      .execute();
   }
-  async updateLocation(loc: MapLocation, itemId?: number | null, conn?: PoolConnection): Promise<void> {
-    await executeQuery(`
-      UPDATE maplocation
-      SET title = ?, ${itemId !== undefined ? 'item_id = ?,' : ''} x = ?, y = ?
-      WHERE id = ?
-    `, [loc.title, ...(itemId !== undefined ? [itemId] : []), loc.x, loc.y, loc.id], conn);
+  async updateLocation(loc: MapLocation, itemId?: number | null, conn?: Trx): Promise<void> {
+    await (conn ?? kysely)
+      .updateTable('maplocation')
+      .set({ title: loc.title, ...(itemId !== undefined ? { item_id: itemId } : {}), x: loc.x, y: loc.y })
+      .where('id', '=', loc.id)
+      .execute();
   }
-  async deleteLocation(locId: number, conn?: PoolConnection): Promise<void> {
-    await executeQuery<ResultSetHeader>(`
-      DELETE FROM maplocation WHERE id = ?
-    `, [locId], conn);
+  async deleteLocation(locId: number, conn?: Trx): Promise<void> {
+    await (conn ?? kysely).deleteFrom('maplocation').where('id', '=', locId).execute();
   }
 
   private async _getLinks(item): Promise<{ to_universe_short: string, to_item_short: string, href: string }[]> {
-    const result = await executeQuery('SELECT to_universe_short, to_item_short, href FROM itemlink WHERE from_item = ?', [item.id]);
-    return result as { to_universe_short: string, to_item_short: string, href: string }[];
+    return await kysely
+      .selectFrom('itemlink')
+      .select(['to_universe_short', 'to_item_short', 'href'])
+      .where('from_item', '=', item.id)
+      .execute();
   }
 
   async getLinks(user: User, universeShortname: string, itemShortname: string): Promise<{ to_universe_short: string, to_item_short: string, href: string }[]> {
@@ -1079,81 +1080,81 @@ export class ItemAPI {
     edges: { from: string, to: string }[],
     deadLinks: { to_universe_short: string, to_item_short: string, count: number }[],
   }> {
-    const edges = await executeQuery(`
-      SELECT DISTINCT src.shortname AS \`from\`, target.shortname AS \`to\`
-      FROM itemlink il
-      INNER JOIN item src ON il.from_item = src.id
-      INNER JOIN item target ON target.universe_id = src.universe_id AND target.shortname = il.to_item_short
-      WHERE src.universe_id = ? AND il.to_universe_short = ?
-    `, [universe.id, universe.shortname]) as { from: string, to: string }[];
+    const edges = await kysely
+      .selectFrom('itemlink as il')
+      .innerJoin('item as src', 'il.from_item', 'src.id')
+      .innerJoin('item as target', (join) => join
+        .onRef('target.universe_id', '=', 'src.universe_id')
+        .onRef('target.shortname', '=', 'il.to_item_short'))
+      .distinct()
+      .select(['src.shortname as from', 'target.shortname as to'])
+      .where('src.universe_id', '=', universe.id)
+      .where('il.to_universe_short', '=', universe.shortname)
+      .execute();
 
-    const deadLinks = await executeQuery(`
-      SELECT il.to_universe_short, il.to_item_short, COUNT(DISTINCT il.from_item) AS count
-      FROM itemlink il
-      INNER JOIN item src ON il.from_item = src.id
-      LEFT JOIN universe tu ON tu.shortname = il.to_universe_short
-      LEFT JOIN item target ON target.universe_id = tu.id AND target.shortname = il.to_item_short
-      WHERE src.universe_id = ? AND target.id IS NULL
-      GROUP BY il.to_universe_short, il.to_item_short
-      ORDER BY count DESC
-    `, [universe.id]) as { to_universe_short: string, to_item_short: string, count: number }[];
+    const deadLinks = await kysely
+      .selectFrom('itemlink as il')
+      .innerJoin('item as src', 'il.from_item', 'src.id')
+      .leftJoin('universe as tu', 'tu.shortname', 'il.to_universe_short')
+      .leftJoin('item as target', (join) => join
+        .onRef('target.universe_id', '=', 'tu.id')
+        .onRef('target.shortname', '=', 'il.to_item_short'))
+      .select(['il.to_universe_short', 'il.to_item_short'])
+      .select((eb) => eb.fn.count<number>('il.from_item').distinct().as('count'))
+      .where('src.universe_id', '=', universe.id)
+      .where('target.id', 'is', null)
+      .groupBy(['il.to_universe_short', 'il.to_item_short'])
+      .orderBy('count', 'desc')
+      .execute();
 
     return { edges, deadLinks };
   }
 
   async getUniverseTabData(universe: { id: number }): Promise<{ [tabType: string]: Set<number> }> {
-    const queries: { [tabType: string]: string } = {
-      gallery: `
-        SELECT DISTINCT ii.item_id FROM itemimage AS ii
-        INNER JOIN item AS i ON i.id = ii.item_id
-        WHERE i.universe_id = ?
-      `,
-      lineage: `
-        SELECT DISTINCT l.parent_id AS item_id FROM lineage AS l
-        INNER JOIN item AS i ON i.id = l.parent_id
-        WHERE i.universe_id = ?
-        UNION
-        SELECT DISTINCT l.child_id AS item_id FROM lineage AS l
-        INNER JOIN item AS i ON i.id = l.child_id
-        WHERE i.universe_id = ?
-      `,
-      timeline: `
-        SELECT DISTINCT ie.item_id FROM itemevent AS ie
-        INNER JOIN item AS i ON i.id = ie.item_id
-        WHERE i.universe_id = ?
-        UNION
-        SELECT DISTINCT ti.timeline_id AS item_id FROM timelineitem AS ti
-        INNER JOIN item AS i ON i.id = ti.timeline_id
-        WHERE i.universe_id = ?
-      `,
-      map: `
-        SELECT DISTINCT m.item_id FROM map AS m
-        INNER JOIN item AS i ON i.id = m.item_id
-        WHERE i.universe_id = ?
-      `,
-      notes: `
-        SELECT DISTINCT inote.item_id FROM itemnote AS inote
-        INNER JOIN item AS i ON i.id = inote.item_id
-        INNER JOIN note AS n ON n.id = inote.note_id
-        WHERE i.universe_id = ? AND n.is_public
-      `,
-      comments: `
-        SELECT DISTINCT c.item_id FROM itemcomment AS c
-        INNER JOIN item AS i ON i.id = c.item_id
-        WHERE i.universe_id = ?
-      `,
-    };
+    const toSet = (rows: { item_id: number }[]) => new Set(rows.map(row => row.item_id));
 
-    const result: { [tabType: string]: Set<number> } = {};
-    for (const tabType in queries) {
-      const params = queries[tabType].includes('UNION') ? [universe.id, universe.id] : [universe.id];
-      const rows = await executeQuery(queries[tabType], params) as { item_id: number }[];
-      result[tabType] = new Set(rows.map(row => row.item_id));
-    }
-    return result;
+    const gallery = await kysely
+      .selectFrom('itemimage as ii').innerJoin('item as i', 'i.id', 'ii.item_id')
+      .select('ii.item_id').distinct().where('i.universe_id', '=', universe.id).execute();
+
+    const lineage = await kysely
+      .selectFrom('lineage as l').innerJoin('item as i', 'i.id', 'l.parent_id')
+      .select('l.parent_id as item_id').distinct().where('i.universe_id', '=', universe.id)
+      .union(kysely
+        .selectFrom('lineage as l').innerJoin('item as i', 'i.id', 'l.child_id')
+        .select('l.child_id as item_id').distinct().where('i.universe_id', '=', universe.id))
+      .execute();
+
+    const timeline = await kysely
+      .selectFrom('itemevent as ie').innerJoin('item as i', 'i.id', 'ie.item_id')
+      .select('ie.item_id').distinct().where('i.universe_id', '=', universe.id)
+      .union(kysely
+        .selectFrom('timelineitem as ti').innerJoin('item as i', 'i.id', 'ti.timeline_id')
+        .select('ti.timeline_id as item_id').distinct().where('i.universe_id', '=', universe.id))
+      .execute();
+
+    const map = await kysely
+      .selectFrom('map as m').innerJoin('item as i', 'i.id', 'm.item_id')
+      .select('m.item_id').distinct().where('i.universe_id', '=', universe.id).execute();
+
+    const notes = await kysely
+      .selectFrom('itemnote as inote')
+      .innerJoin('item as i', 'i.id', 'inote.item_id')
+      .innerJoin('note as n', 'n.id', 'inote.note_id')
+      .select('inote.item_id').distinct()
+      .where('i.universe_id', '=', universe.id).where('n.is_public', '=', true).execute();
+
+    const comments = await kysely
+      .selectFrom('itemcomment as c').innerJoin('item as i', 'i.id', 'c.item_id')
+      .select('c.item_id').distinct().where('i.universe_id', '=', universe.id).execute();
+
+    return {
+      gallery: toSet(gallery), lineage: toSet(lineage), timeline: toSet(timeline),
+      map: toSet(map), notes: toSet(notes), comments: toSet(comments),
+    };
   }
 
-  async handleLinks(item: Item, objData: any, conn?: PoolConnection): Promise<void> {
+  async handleLinks(item: Item, objData: any, conn?: Trx): Promise<void> {
     if (objData.body && typeof objData.body !== 'string') {
       const links: ({ href: string } & LinkData)[] = [];
       indexedToJson(objData.body as IndexedDocument, (href) => href.startsWith('@') && links.push({ href, ...extractLinkData(href) }));
@@ -1163,16 +1164,19 @@ export class ItemAPI {
       for (const { href } of oldLinks) {
         existingLinks[href] = true;
       }
-      const doUpdates = async (conn: PoolConnection) => {
+      const doUpdates = async (conn: Trx) => {
         for (const { universe, item: itemShort, href } of links) {
           newLinks[href] = true;
-          if (!existingLinks[href]) {
-            await conn.execute('INSERT INTO itemlink (from_item, to_universe_short, to_item_short, href) VALUES (?, ?, ?, ?)', [ item.id, universe ?? item.universe_short, itemShort, href ]);
+          if (!existingLinks[href] && itemShort) {
+            await conn
+              .insertInto('itemlink')
+              .values({ from_item: item.id, to_universe_short: universe ?? item.universe_short, to_item_short: itemShort, href })
+              .execute();
           }
         }
         for (const { href } of oldLinks) {
           if (!newLinks[href]) {
-            await conn.execute('DELETE FROM itemlink WHERE from_item = ? AND href = ?', [ item.id, href ]);
+            await conn.deleteFrom('itemlink').where('from_item', '=', item.id).where('href', '=', href).execute();
           }
         }
       };
@@ -1184,52 +1188,49 @@ export class ItemAPI {
     }
   }
 
-  async fetchEvents(itemId: number, options: EventOptions = {}): Promise<(ItemEvent & { id: number })[]> {
-    let queryString = `SELECT * FROM itemevent WHERE item_id = ?`;
-    const values: (string | number)[] = [itemId];
-    if (options.title) {
-      queryString += ` AND event_title = ?`;
-      values.push(options.title);
+  async fetchEvents(itemId: number, options: EventOptions = {}): Promise<{ id: number, event_title: string | null, abstime: number | null }[]> {
+    const { title } = options;
+    let query = kysely.selectFrom('itemevent').selectAll().where('item_id', '=', itemId);
+    if (title !== undefined && title !== '') {
+      query = title === null ? query.where('event_title', 'is', null) : query.where('event_title', '=', title);
     }
-    return await executeQuery(queryString, values) as (ItemEvent & { id: number })[];
+    const rows = await query.execute();
+    return rows;
   }
-  async insertEvents(itemId: number, events: { event_title: string, abstime: number }[], conn?: PoolConnection): Promise<void> {
+  async insertEvents(itemId: number, events: { event_title: string | null, abstime: number | null }[], conn?: Trx): Promise<void> {
     if (!events.length) return;
-    const queryString = 'INSERT INTO itemevent (item_id, event_title, abstime) VALUES ' + events.map(() => '(?, ?, ?)').join(',');
-    const values = events.reduce((acc, event) => ([...acc, itemId, event.event_title, event.abstime]), []);
-    await executeQuery(queryString, values, conn);
+    await (conn ?? kysely)
+      .insertInto('itemevent')
+      .values(events.map((event) => ({ item_id: itemId, event_title: event.event_title, abstime: event.abstime })))
+      .execute();
   }
-  async updateEvent(eventId: number, changes: { event_title: string, abstime: number }, conn?: PoolConnection): Promise<void> {
+  async updateEvent(eventId: number, changes: { event_title: string | null, abstime: number | null }, conn?: Trx): Promise<void> {
     const { event_title, abstime } = changes;
-    const queryString = 'UPDATE itemevent SET event_title = ?, abstime = ? WHERE id = ?';
-    await executeQuery(queryString, [event_title, abstime, eventId], conn);
+    await (conn ?? kysely).updateTable('itemevent').set({ event_title, abstime }).where('id', '=', eventId).execute();
   }
-  async deleteEvents(eventIds: number[], conn?: PoolConnection): Promise<void> {
+  async deleteEvents(eventIds: number[], conn?: Trx): Promise<void> {
     if (!eventIds.length) return;
     // Un-import deleted events
     await this.deleteImports(null, eventIds);
-    const [whereClause, values] = eventIds.reduce((cond, id) => cond.or('id = ?', id), new Cond()).export();
-    const queryString = `DELETE FROM itemevent WHERE ${whereClause};`;
-    await executeQuery(queryString, values.filter(val => val !== undefined), conn);
+    await (conn ?? kysely).deleteFrom('itemevent').where('id', 'in', eventIds).execute();
   }
-  async importEvents(itemId: number, eventIds: number[], conn?: PoolConnection): Promise<void> {
+  async importEvents(itemId: number, eventIds: number[], conn?: Trx): Promise<void> {
     if (!eventIds.length) return;
-    const queryString = 'INSERT INTO timelineitem (timeline_id, event_id) VALUES ' + eventIds.map(() => '(?, ?)').join(',');
-    const values = eventIds.reduce((acc, eventId) => ([...acc, itemId, eventId]), []);
-    await executeQuery(queryString, values, conn);
+    await (conn ?? kysely)
+      .insertInto('timelineitem')
+      .values(eventIds.map((eventId) => ({ timeline_id: itemId, event_id: eventId })))
+      .execute();
   }
-  async deleteImports(itemId: number | null, eventIds: number[], conn?: PoolConnection): Promise<void> {
+  async deleteImports(itemId: number | null, eventIds: number[], conn?: Trx): Promise<void> {
     if (!eventIds.length) return;
-    let cond = eventIds.reduce((cond, id) => cond.or('event_id = ?', id), new Cond());
-    if (itemId !== null) cond = cond.and('timeline_id = ?', itemId);
-    const [whereClause, values] = cond.export();
-    const queryString = `DELETE FROM timelineitem WHERE ${whereClause};`;
-    await executeQuery(queryString, values.filter(val => val !== undefined), conn);
+    await (conn ?? kysely)
+      .deleteFrom('timelineitem')
+      .where('event_id', 'in', eventIds)
+      .$if(itemId !== null, (qb) => qb.where('timeline_id', '=', itemId!))
+      .execute();
   }
   async fetchImports(itemId: number): Promise<{ event_id: number, timeline_id: number }[]> {
-    const queryString = `SELECT * FROM timelineitem WHERE timeline_id = ?`;
-    const values = [itemId];
-    return await executeQuery(queryString, values) as { event_id: number, timeline_id: number }[];
+    return await kysely.selectFrom('timelineitem').selectAll().where('timeline_id', '=', itemId).execute();
   }
 
   async put(
@@ -1237,7 +1238,7 @@ export class ItemAPI {
     universeShortname: string,
     itemShortname: string,
     changes: { title?: string, shortname?: string, item_type?: string, obj_data?: ObjData, tags?: string[], vault_short?: string | null },
-    conn?: PoolConnection
+    conn?: Trx
   ): Promise<number> {
     if (!user) throw new UnauthorizedError();
     const { title, shortname, item_type, obj_data, tags, vault_short } = changes;
@@ -1274,32 +1275,23 @@ export class ItemAPI {
       ? await this.api.vault.getOneByShortnames(user, universeShortname, vault_short, perms.WRITE)
       : null;
 
-    const doUpdate = async (conn: PoolConnection) => {
+    const doUpdate = async (conn: Trx) => {
       if (shortname !== null && shortname !== undefined && shortname !== item.shortname) {
-        await conn.execute('UPDATE itemlink SET to_item_short = ? WHERE to_item_short = ?', [shortname, item.shortname]);
+        await conn.updateTable('itemlink').set({ to_item_short: shortname }).where('to_item_short', '=', item.shortname).execute();
       }
 
-      const queryString = `
-        UPDATE item
-        SET
-          title = ?,
-          shortname = ?,
-          item_type = ?,
-          obj_data = ?,
-          vault_id = ?,
-          last_updated_by = ?
-        WHERE id = ?;
-      `;
-
-      await conn.execute(queryString, [
-        title,
-        shortname ?? item.shortname,
-        item_type ?? item.item_type,
-        JSON.stringify(obj_data),
-        vault_short !== undefined ? vault?.id ?? null : item.vault_id,
-        user.id,
-        item.id
-      ]);
+      await conn
+        .updateTable('item')
+        .set({
+          title,
+          shortname: shortname ?? item.shortname,
+          item_type: item_type ?? item.item_type,
+          obj_data: JSON.stringify(obj_data),
+          vault_id: vault_short !== undefined ? vault?.id ?? null : item.vault_id,
+          last_updated_by: user.id,
+        })
+        .where('id', '=', item.id)
+        .execute();
 
       if (
         title !== item.title || shortname !== item.shortname || item_type !== item.item_type || vault_short !== item.vault_short ||
@@ -1319,11 +1311,11 @@ export class ItemAPI {
     return item.id;
   }
 
-  async markUpdated(itemId: number, conn: PoolConnection): Promise<void> {
-    await conn.execute('UPDATE item SET updated_at = ? WHERE id = ?', [new Date(), itemId]);
+  async markUpdated(itemId: number, conn: Trx): Promise<void> {
+    await conn.updateTable('item').set({ updated_at: new Date() }).where('id', '=', itemId).execute();
   }
 
-  async putData(user: User | undefined, universeShortname: string, itemShortname: string, changes): Promise<ResultSetHeader> {
+  async putData(user: User | undefined, universeShortname: string, itemShortname: string, changes): Promise<{ numUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
 
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE);
@@ -1333,49 +1325,55 @@ export class ItemAPI {
       ...changes,
     };
 
-    let data!: ResultSetHeader;
-    await withTransaction(async (conn) => {
-      await this.handleLinks(item as Item, item.obj_data, conn);
+    let numUpdatedRows = 0;
+    await withTransaction(async (trx) => {
+      await this.handleLinks(item as Item, item.obj_data, trx);
 
-      const queryString = `UPDATE item SET obj_data = ?, updated_at = ?, last_updated_by = ? WHERE id = ?;`;
-      [data] = await conn.execute<ResultSetHeader>(queryString, [JSON.stringify(item.obj_data), new Date(), user.id, item.id]);
+      const result = await trx
+        .updateTable('item')
+        .set({ obj_data: JSON.stringify(item.obj_data), updated_at: new Date(), last_updated_by: user.id })
+        .where('id', '=', item.id)
+        .executeTakeFirst();
+      numUpdatedRows = Number(result.numUpdatedRows);
 
-      this.api.universe.putUpdatedAtWithTransaction(conn, item.universe_id, new Date());
+      this.api.universe.putUpdatedAtWithTransaction(trx, item.universe_id, new Date());
     });
 
-    return data;
+    return { numUpdatedRows };
   }
 
   // TODO - how should permissions work on this?
   async exists(user: User | undefined, universeShortname: string, itemShortname: string): Promise<boolean> {
-    const queryString = `
-      SELECT 1
-      FROM item
-      INNER JOIN universe ON universe.id = item.universe_id
-      WHERE universe.shortname = ? AND item.shortname = ?;
-    `;
-    const data = await executeQuery(queryString, [universeShortname, itemShortname]);
-    return data.length > 0;
+    const row = await kysely
+      .selectFrom('item')
+      .innerJoin('universe', 'universe.id', 'item.universe_id')
+      .select('item.id')
+      .where('universe.shortname', '=', universeShortname)
+      .where('item.shortname', '=', itemShortname)
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async getLineage(item: BasicItem): Promise<[Parent[], Child[]]> {
-    const children = await executeQuery(`
-      SELECT
-        item.id, item.shortname AS child_shortname, item.title AS child_title,
-        lineage.child_title AS child_label, lineage.parent_title AS parent_label
-      FROM lineage
-      INNER JOIN item ON item.id = lineage.child_id
-      WHERE lineage.parent_id = ?
-    `, [item.id]) as Child[];
+    const children = await kysely
+      .selectFrom('lineage')
+      .innerJoin('item', 'item.id', 'lineage.child_id')
+      .select([
+        'item.id', 'item.shortname as child_shortname', 'item.title as child_title',
+        'lineage.child_title as child_label', 'lineage.parent_title as parent_label',
+      ])
+      .where('lineage.parent_id', '=', item.id)
+      .execute();
 
-    const parents = await executeQuery(`
-      SELECT
-        item.id, item.shortname AS parent_shortname, item.title AS parent_title,
-        lineage.child_title AS child_label, lineage.parent_title AS parent_label
-      FROM lineage
-      INNER JOIN item ON item.id = lineage.parent_id
-      WHERE lineage.child_id = ?
-    `, [item.id]) as Parent[];
+    const parents = await kysely
+      .selectFrom('lineage')
+      .innerJoin('item', 'item.id', 'lineage.parent_id')
+      .select([
+        'item.id', 'item.shortname as parent_shortname', 'item.title as parent_title',
+        'lineage.child_title as child_label', 'lineage.parent_title as parent_label',
+      ])
+      .where('lineage.child_id', '=', item.id)
+      .execute();
 
     return [parents, children];
   }
@@ -1409,25 +1407,28 @@ export class ItemAPI {
   /**
    * NOT safe. Make sure user has permissions to the item in question before calling this!
    */
-  async putLineage(parent_id: number, child_id: number, parent_title: string, child_title: string, conn?: PoolConnection): Promise<ResultSetHeader> {
-    const queryString = `
-      INSERT INTO lineage (parent_id, child_id, parent_title, child_title) VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE parent_title = ?, child_title = ?
-    `;
-    const data = await executeQuery<ResultSetHeader>(queryString, [parent_id, child_id, parent_title, child_title, parent_title, child_title], conn);
-    return data;
+  async putLineage(parent_id: number, child_id: number, parent_title: string | null, child_title: string | null, conn?: Trx): Promise<{ insertId: number }> {
+    const data = await (conn ?? kysely)
+      .insertInto('lineage')
+      .values({ parent_id, child_id, parent_title, child_title })
+      .onDuplicateKeyUpdate({ parent_title, child_title })
+      .executeTakeFirstOrThrow();
+    return { insertId: Number(data.insertId ?? 0) };
   }
 
   /**
    * NOT safe. Make sure user has permissions to the item in question before calling this!
    */
-  async delLineage(parent_id: number, child_id: number, conn?: PoolConnection): Promise<ResultSetHeader> {
-    const queryString = `DELETE FROM lineage WHERE parent_id = ? AND child_id = ?;`;
-    const data = await executeQuery<ResultSetHeader>(queryString, [parent_id, child_id], conn);
-    return data;
+  async delLineage(parent_id: number, child_id: number, conn?: Trx): Promise<{ numDeletedRows: number }> {
+    const data = await (conn ?? kysely)
+      .deleteFrom('lineage')
+      .where('parent_id', '=', parent_id)
+      .where('child_id', '=', child_id)
+      .executeTakeFirstOrThrow();
+    return { numDeletedRows: Number(data.numDeletedRows) };
   }
 
-  async putTags(user: User | undefined, universeShortname: string, itemShortname: string, tags: string[], conn?: PoolConnection): Promise<ResultSetHeader | void> {
+  async putTags(user: User | undefined, universeShortname: string, itemShortname: string, tags: string[], conn?: Trx): Promise<{ insertId: number } | void> {
     if (tags.length === 0) return; // Nothing to do
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
     const tagLookup = {};
@@ -1435,60 +1436,80 @@ export class ItemAPI {
       tagLookup[tag] = true;
     });
     const filteredTags = tags.filter(tag => !tagLookup[tag]);
-    const valueString = filteredTags.map(() => `(?, ?)`).join(',');
-    const valueArray = filteredTags.reduce((arr, tag) => [...arr, item.id, tag], []);
-    if (!valueString) return;
-    const queryString = `INSERT INTO tag (item_id, tag) VALUES ${valueString};`;
-    const data = await executeQuery<ResultSetHeader>(queryString, valueArray, conn);
-    return data;
+    if (filteredTags.length === 0) return;
+    const data = await (conn ?? kysely)
+      .insertInto('tag')
+      .values(filteredTags.map((tag) => ({ item_id: item.id, tag })))
+      .executeTakeFirstOrThrow();
+    return { insertId: Number(data.insertId ?? 0) };
   }
 
-  async delTags(user: User | undefined, universeShortname: string, itemShortname: string, tags: string[], conn?: PoolConnection): Promise<ResultSetHeader | void> {
+  async delTags(user: User | undefined, universeShortname: string, itemShortname: string, tags: string[], conn?: Trx): Promise<{ numDeletedRows: number } | void> {
     if (tags.length === 0) return; // Nothing to do
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE, true);
-    const whereString = tags.map(() => `tag = ?`).join(' OR ');
-    if (!whereString) return;
-    const queryString = `DELETE FROM tag WHERE item_id = ? AND (${whereString});`;
-    const data = await executeQuery<ResultSetHeader>(queryString, [item.id, ...tags], conn);
-    return data;
+    const data = await (conn ?? kysely)
+      .deleteFrom('tag')
+      .where('item_id', '=', item.id)
+      .where('tag', 'in', tags)
+      .executeTakeFirstOrThrow();
+    return { numDeletedRows: Number(data.numDeletedRows) };
   }
 
-  async snoozeUntil(user: User | undefined, universeShortname: string, itemShortname: string): Promise<ResultSetHeader> {
+  async snoozeUntil(user: User | undefined, universeShortname: string, itemShortname: string): Promise<{ numUpdatedRows: number } | { insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.WRITE);
 
-    const snooze = (await executeQuery(`SELECT * FROM snooze WHERE item_id = ${item.id} AND snoozed_by = ${user.id};`))[0];
+    const snooze = await kysely
+      .selectFrom('snooze')
+      .selectAll()
+      .where('item_id', '=', item.id)
+      .where('snoozed_by', '=', user.id)
+      .executeTakeFirst();
 
     const now = new Date();
 
     if (snooze) {
-      return await executeQuery<ResultSetHeader>(`UPDATE snooze SET snoozed_at = ? WHERE item_id = ? AND snoozed_by = ?;`, [now, item.id, user.id]);
+      const result = await kysely
+        .updateTable('snooze')
+        .set({ snoozed_at: now })
+        .where('item_id', '=', item.id)
+        .where('snoozed_by', '=', user.id)
+        .executeTakeFirstOrThrow();
+      return { numUpdatedRows: Number(result.numUpdatedRows) };
     } else {
-      return await executeQuery<ResultSetHeader>(`INSERT INTO snooze (item_id, snoozed_at, snoozed_by) VALUES (?, ?, ?);`, [item.id, now, user.id]);
+      const result = await kysely
+        .insertInto('snooze')
+        .values({ item_id: item.id, snoozed_at: now, snoozed_by: user.id })
+        .executeTakeFirstOrThrow();
+      return { insertId: Number(result.insertId ?? 0) };
     }
   }
 
-  async subscribeNotifs(user: User | undefined, universeShortname: string, itemShortname: string, isSubscribed: boolean): Promise<ResultSetHeader> {
+  async subscribeNotifs(user: User | undefined, universeShortname: string, itemShortname: string, isSubscribed: boolean): Promise<{ numInsertedOrUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.READ);
 
-    return await executeQuery<ResultSetHeader>(`
-        INSERT INTO itemnotification (item_id, user_id, is_enabled) VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE is_enabled = ?
-      `, [item.id, user.id, isSubscribed, isSubscribed]);
+    const result = await kysely
+      .insertInto('itemnotification')
+      .values({ item_id: item.id, user_id: user.id, is_enabled: isSubscribed })
+      .onDuplicateKeyUpdate({ is_enabled: isSubscribed })
+      .executeTakeFirstOrThrow();
+
+    return { numInsertedOrUpdatedRows: Number(result.numInsertedOrUpdatedRows ?? 0) };
   }
 
   async del(user: User | undefined, universeShortname: string, itemShortname: string): Promise<void> {
     const item = await this.getByUniverseAndItemShortnames(user, universeShortname, itemShortname, perms.OWNER, true);
 
-    await withTransaction(async (conn) => {
-      await conn.execute(`
-          DELETE comment
-          FROM comment
-          INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
-          WHERE ic.item_id = ?;
-        `, [item.id]);
-      await conn.execute(`DELETE FROM item WHERE id = ?;`, [item.id]);
+    await withTransaction(async (trx) => {
+      // TODO another DELETE-with-JOIN Kysely doesn't support
+      await sql`
+        DELETE comment
+        FROM comment
+        INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
+        WHERE ic.item_id = ${item.id}
+      `.execute(trx);
+      await trx.deleteFrom('item').where('id', '=', item.id).execute();
     });
 
     await embedder.deleteForItem(item.id);

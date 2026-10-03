@@ -1,7 +1,7 @@
 import db from '.';
 import api from '../api';
 import { Item } from '../api/models/item';
-import { executeQuery } from '../api/utils';
+import { executeQuery } from './legacy';
 import readline from 'readline';
 
 async function main() {
@@ -15,7 +15,7 @@ async function main() {
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     console.log(`Resetting... (${i}/${items.length})`);
-    if (item.obj_data.body) {
+    if (item.obj_data?.body) {
       await api.item.handleLinks(item, item.obj_data);
     }
     readline.moveCursor(process.stdout, 0, -1);

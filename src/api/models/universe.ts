@@ -1,4 +1,4 @@
-import { PoolConnection, QueryResult, ResultSetHeader } from 'mysql2/promise';
+import { sql } from 'kysely';
 import { API } from '..';
 import embedder from '../../embedding';
 import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from '../../errors';
@@ -6,7 +6,9 @@ import { typeConfigProblems, type TypeConfigs } from '../../lib/itemTypeConfig';
 import type { TabLayout } from '../../lib/tabLayout';
 import { IndexedDocument } from '../../lib/tiptapHelpers';
 import { deepCompare } from '../../lib/utils';
-import { BaseOptions, Tier, executeQuery, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
+import { BaseOptions, Tier, getPfpUrl, handleAsNull, parseData, perms, tierAllowance, tiers, withTransaction } from '../utils';
+import { kysely, Trx } from '../../db/kysely';
+import { toRawSql } from '../../db/legacyCond';
 import { Item, ItemEvent } from './item';
 import { User } from './user';
 
@@ -47,7 +49,7 @@ export type Universe = {
   id: number,
   title: string,
   shortname: string,
-  author_id: number,
+  author_id: number | null,
   created_at: Date,
   updated_at: Date,
   is_public: boolean,
@@ -59,10 +61,10 @@ export type Universe = {
   obj_data: UniverseObjData,
   authors: { [id: number]: string },
   author_permissions: { [id: number]: perms },
-  owner: string,
+  owner: string | null,
   followers: { [id: number]: boolean },
-  tier: Tier | null,
-  sponsoring_user: number,
+  tier: Tier,
+  sponsoring_user: number | null,
 };
 
 const validateShortname = (shortname: string, reservedShortnames: string[] = ['create', 'news', '_home', '_public']) => {
@@ -107,7 +109,11 @@ export class UniverseAPI {
     const data = await this.getMany(user, parsedConditions, permissionLevel);
     const universe = data[0];
     if (!universe) {
-      const exists = (await executeQuery(`SELECT 1 FROM universe WHERE ${parsedConditions.strings.join(' AND ')}`, parsedConditions.values)).length > 0;
+      let existsQuery = kysely.selectFrom('universe').select(sql<number>`1`.as('one'));
+      for (let i = 0; i < parsedConditions.strings.length; i++) {
+        existsQuery = existsQuery.where(toRawSql<boolean>(parsedConditions.strings[i], [parsedConditions.values[i]]));
+      }
+      const exists = (await existsQuery.limit(1).executeTakeFirst()) !== undefined;
       if (exists) {
         if (user) throw new ForbiddenError();
         else throw new UnauthorizedError();
@@ -118,7 +124,7 @@ export class UniverseAPI {
     return universe;
   }
 
-  async getMany(user: User | undefined, conditions: any = null, permissionLevel = perms.READ, options: BaseOptions = {}): Promise<Universe[]> {
+  async getMany(user: User | undefined, conditions: { strings: string[], values: any[] } | null = null, permissionLevel = perms.READ, options: BaseOptions = {}): Promise<Universe[]> {
 
     if (options.sort && !options.forceSort) {
       const validSorts = { 'title': true, 'created_at': true, 'updated_at': true };
@@ -128,37 +134,59 @@ export class UniverseAPI {
     }
 
     if (!user && permissionLevel > perms.READ) throw new ValidationError('User is required to access at above read-only permissions.');
-    const readOnlyQueryString = permissionLevel > perms.READ ? '' : `universe.is_public = 1`;
-    const usrQueryString = user ? `(au_filter.user_id = ${user.id} AND au_filter.permission_level >= ${permissionLevel})` : '';
-    const permsQueryString = `${readOnlyQueryString}${(readOnlyQueryString && usrQueryString) ? ' OR ' : ''}${usrQueryString}`;
-    const conditionString = conditions ? `WHERE ${conditions.strings.join(' AND ')}` : '';
-    const queryString = `
-      SELECT
-        universe.*,
-        JSON_OBJECTAGG(author.id, author.username) AS authors,
-        JSON_OBJECTAGG(author.id, au.permission_level) AS author_permissions,
-        owner.username AS owner,
-        JSON_REMOVE(JSON_OBJECTAGG(
-          IFNULL(fu.user_id, 'null__'),
-          fu.is_following
-        ), '$.null__') AS followers,
-        usu.tier AS tier,
-        usu.user_id AS sponsoring_user
-      FROM universe
-      INNER JOIN authoruniverse AS au_filter
-        ON universe.id = au_filter.universe_id AND (
-          ${permsQueryString}
-        )
-      LEFT JOIN authoruniverse AS au ON universe.id = au.universe_id
-      LEFT JOIN user AS author ON author.id = au.user_id
-      LEFT JOIN followeruniverse AS fu ON universe.id = fu.universe_id
-      LEFT JOIN user AS owner ON universe.author_id = owner.id
-      LEFT JOIN usersponsoreduniverse AS usu ON universe.id = usu.universe_id
-      ${conditionString}
-      GROUP BY universe.id
-      ORDER BY ${options.sort ? `${options.sort} ${options.sortDesc ? 'DESC' : 'ASC'}` : 'updated_at DESC'}`;
-    const data = await executeQuery(queryString, conditions && conditions.values) as Universe[];
-    return data;
+
+    let query = kysely
+      .selectFrom('universe')
+      .innerJoin('authoruniverse as au_filter', (join) => join
+        .onRef('universe.id', '=', 'au_filter.universe_id')
+        .on((eb) => eb.or([
+          ...(permissionLevel <= perms.READ ? [eb('universe.is_public', '=', true)] : []),
+          ...(user ? [eb.and([
+            eb('au_filter.user_id', '=', user.id),
+            eb('au_filter.permission_level', '>=', permissionLevel),
+          ])] : []),
+        ])))
+      .leftJoin('authoruniverse as au', 'au.universe_id', 'universe.id')
+      .leftJoin('user as author', 'author.id', 'au.user_id')
+      .leftJoin('followeruniverse as fu', 'fu.universe_id', 'universe.id')
+      .leftJoin('user as owner', 'owner.id', 'universe.author_id')
+      .leftJoin('usersponsoreduniverse as usu', 'usu.universe_id', 'universe.id')
+      .select([
+        'universe.id', 'universe.title', 'universe.shortname', 'universe.author_id',
+        'universe.created_at', 'universe.updated_at', 'universe.is_public',
+        'universe.discussion_enabled', 'universe.discussion_open',
+        'universe.mcp_items_enabled', 'universe.mcp_notes_enabled', 'universe.mcp_discussions_enabled',
+        'universe.obj_data',
+        'owner.username as owner',
+        'usu.user_id as sponsoring_user',
+      ])
+      .select(sql<Tier>`COALESCE(usu.tier, ${tiers.FREE})`.as('tier'))
+      .select(sql<{ [id: number]: string }>`JSON_OBJECTAGG(author.id, author.username)`.as('authors'))
+      .select(sql<{ [id: number]: perms }>`JSON_OBJECTAGG(author.id, au.permission_level)`.as('author_permissions'))
+      .select(sql<{ [id: number]: boolean }>`
+        JSON_REMOVE(JSON_OBJECTAGG(IFNULL(fu.user_id, 'null__'), fu.is_following), '$.null__')
+      `.as('followers'))
+      .groupBy('universe.id');
+
+    // support the old-style `conditions`
+    // TODO at some point we should clean this up
+    let bridged: any = query;
+    if (conditions) {
+      let valueIndex = 0;
+      for (const str of conditions.strings) {
+        const placeholderCount = (str.match(/\?/g) ?? []).length;
+        const vals = conditions.values.slice(valueIndex, valueIndex + placeholderCount);
+        valueIndex += placeholderCount;
+        bridged = bridged.where(toRawSql<boolean>(str, vals));
+      }
+    }
+    query = bridged as typeof query;
+
+    query = options.sort
+      ? query.orderBy(kysely.dynamic.ref(options.sort), options.sortDesc ? 'desc' : 'asc')
+      : query.orderBy('universe.updated_at', 'desc');
+
+    return query.execute();
   }
 
   getManyByAuthorId(user, authorId, permissionLevel = perms.WRITE): Promise<Universe[]> {
@@ -178,13 +206,18 @@ export class UniverseAPI {
   }
 
   getManyByAuthorName(user, authorName): Promise<Universe[]> {
+    // `au_check` (authoruniverse) has no `username` column of its own - joined to `user` here to
+    // compare against the real column. This method is currently unreachable from any caller, so
+    // this was a pre-existing dead-code bug (always throwing `ER_BAD_FIELD_ERROR` if it were ever
+    // invoked), not a behavior change for anything actually running.
     return this.getMany(user, {
       strings: [`
         EXISTS (
           SELECT 1
           FROM authoruniverse as au_check
+          INNER JOIN user AS au_check_user ON au_check_user.id = au_check.user_id
           WHERE au_check.universe_id = universe.id
-          AND (au_check.username = ? AND au_check.permission_level >= ?)
+          AND (au_check_user.username = ? AND au_check.permission_level >= ?)
         )
       `], values: [
         authorName,
@@ -196,49 +229,55 @@ export class UniverseAPI {
   async getEventsByUniverseShortname(user: User | undefined, shortname: string, permissionsRequired = perms.READ): Promise<ItemEvent[]> {
     const universe = await this.getOne(user, { 'universe.shortname': shortname }, permissionsRequired);
 
-    const queryString = `
-      SELECT
-        itemevent.event_title, itemevent.abstime,
-        item.shortname AS src_shortname, item.title AS src_title, item.id AS src_id
-      FROM itemevent
-      INNER JOIN item on item.id = itemevent.item_id
-      WHERE item.universe_id = ?
-    `;
-    return await executeQuery(queryString, [universe.id]) as ItemEvent[];
+    const events = await kysely
+      .selectFrom('itemevent')
+      .innerJoin('item', 'item.id', 'itemevent.item_id')
+      .select([
+        'itemevent.event_title', 'itemevent.abstime',
+        'item.shortname as src_shortname', 'item.title as src_title', 'item.id as src_id',
+      ])
+      .where('item.universe_id', '=', universe.id)
+      .execute();
+    return events;
   }
 
   // Does not throw if universe has no body..
   async getPublicBodyByShortname(shortname: string): Promise<IndexedDocument | void> {
-    const queryString = 'SELECT id, obj_data FROM universe WHERE shortname = ?';
-    const universe = (await executeQuery(queryString, [shortname]))[0];
+    const universe = await kysely
+      .selectFrom('universe')
+      .select(['id', 'obj_data'])
+      .where('shortname', '=', shortname)
+      .executeTakeFirst();
     if (!universe) throw new NotFoundError();
-    const publicPageEnabled = universe.obj_data.publicPage;
+    const objData = universe.obj_data as UniverseObjData;
+    const publicPageEnabled = objData.publicPage;
     if (!publicPageEnabled) return;
-    const itemQueryString = `SELECT obj_data FROM item WHERE universe_id = ? AND shortname = '_public'`;
-    const item: Partial<Item> | undefined = (await executeQuery<QueryResult>(itemQueryString, [universe.id]))[0];
+    const item = await kysely
+      .selectFrom('item')
+      .select('obj_data')
+      .where('universe_id', '=', universe.id)
+      .where('shortname', '=', '_public')
+      .executeTakeFirst();
     if (!item) throw new NotFoundError();
-    const publicBody = item.obj_data!.body;
+    const publicBody = (item.obj_data as Item['obj_data'])?.body;
     if (!publicBody) return;
     return publicBody;
   }
 
   async getTotalStoredByShortname(shortname: string): Promise<number> {
-    const queryString = `
-      SELECT SUM(OCTET_LENGTH(image.data)) AS size
-      FROM universe
-      INNER JOIN item ON item.universe_id = universe.id
-      INNER JOIN itemimage ON itemimage.item_id = item.id
-      INNER JOIN image ON image.id = itemimage.image_id
-      WHERE universe.shortname = ?
-      GROUP BY universe.title
-    `;
-
-    const rows = await executeQuery<ResultSetHeader>(queryString, [shortname])
-    if (!rows) throw new NotFoundError();
-    return Number(rows[0]?.size);
+    const row = await kysely
+      .selectFrom('universe')
+      .innerJoin('item', 'item.universe_id', 'universe.id')
+      .innerJoin('itemimage', 'itemimage.item_id', 'item.id')
+      .innerJoin('image', 'image.id', 'itemimage.image_id')
+      .select(sql<number | null>`SUM(OCTET_LENGTH(image.data))`.as('size'))
+      .where('universe.shortname', '=', shortname)
+      .groupBy('universe.title')
+      .executeTakeFirst();
+    return Number(row?.size);
   }
 
-  async post(user: User | undefined, body): Promise<[ResultSetHeader, ResultSetHeader]> {
+  async post(user: User | undefined, body): Promise<[{ insertId: number }, { insertId: number }]> {
     if (!user) throw new UnauthorizedError();
 
     try {
@@ -248,42 +287,34 @@ export class UniverseAPI {
       if (shortnameError) throw new ValidationError(shortnameError);
       if (!title) throw new ValidationError('Title is required.');
 
-      let data!: ResultSetHeader;
-      let authorData!: ResultSetHeader;
-      await withTransaction(async (conn) => {
-        const queryString1 = `
-          INSERT INTO universe (
+      let data!: { insertId: number };
+      let authorData!: { insertId: number };
+      await withTransaction(async (trx) => {
+        const inserted = await trx
+          .insertInto('universe')
+          .values({
             title,
             shortname,
-            author_id,
+            author_id: user.id,
             is_public,
             discussion_enabled,
             discussion_open,
-            mcp_items_enabled,
-            mcp_notes_enabled,
-            mcp_discussions_enabled,
-            obj_data,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        `;
-        [data] = await conn.execute<ResultSetHeader>(queryString1, [
-          title,
-          shortname,
-          user.id,
-          is_public,
-          discussion_enabled,
-          discussion_open,
-          Boolean(mcp_items_enabled),
-          Boolean(mcp_notes_enabled),
-          Boolean(mcp_discussions_enabled),
-          obj_data,
-          new Date(),
-          new Date(),
-        ]);
+            mcp_items_enabled: Boolean(mcp_items_enabled),
+            mcp_notes_enabled: Boolean(mcp_notes_enabled),
+            mcp_discussions_enabled: Boolean(mcp_discussions_enabled),
+            // TODO tighten the type on obj_data here
+            obj_data: typeof obj_data === 'string' ? obj_data : JSON.stringify(obj_data),
+            created_at: new Date(),
+            updated_at: new Date(),
+          })
+          .executeTakeFirstOrThrow();
+        data = { insertId: Number(inserted.insertId ?? 0) };
 
-        const queryString2 = `INSERT INTO authoruniverse (universe_id, user_id, permission_level) VALUES (?, ?, ?)`;
-        [authorData] = await conn.execute<ResultSetHeader>(queryString2, [data.insertId, user.id, perms.OWNER]);
+        const insertedAuthor = await trx
+          .insertInto('authoruniverse')
+          .values({ universe_id: data.insertId, user_id: user.id, permission_level: perms.OWNER })
+          .executeTakeFirstOrThrow();
+        authorData = { insertId: Number(insertedAuthor.insertId ?? 0) };
       });
 
       return [data, authorData];
@@ -294,8 +325,8 @@ export class UniverseAPI {
     }
   }
 
-  async putUpdatedAtWithTransaction(conn: PoolConnection, universeId: number, updatedAt: Date): Promise<void> {
-    await conn.execute('UPDATE universe SET updated_at = ? WHERE id = ?', [updatedAt, universeId]);
+  async putUpdatedAtWithTransaction(conn: Trx, universeId: number, updatedAt: Date): Promise<void> {
+    await conn.updateTable('universe').set({ updated_at: updatedAt }).where('id', '=', universeId).execute();
   }
 
   async put(user: User | undefined, universeShortname: string, changes): Promise<number> {
@@ -328,41 +359,44 @@ export class UniverseAPI {
       const shortnameError = this.validateShortname(shortname);
       if (shortnameError) throw new ValidationError(shortnameError);
 
-      await executeQuery('UPDATE itemlink SET to_universe_short = ? WHERE to_universe_short = ?', [shortname, universe.shortname]);
+      await kysely.updateTable('itemlink').set({ to_universe_short: shortname }).where('to_universe_short', '=', universe.shortname).execute();
     }
 
-
-    const queryString = `
-      UPDATE universe
-      SET
-        title = ?,
-        shortname = ?,
-        is_public = ?,
-        discussion_enabled = ?,
-        discussion_open = ?,
-        mcp_items_enabled = ?,
-        mcp_notes_enabled = ?,
-        mcp_discussions_enabled = ?,
-        obj_data = ?,
-        updated_at = ?
-      WHERE id = ?
-    `;
-    await executeQuery(queryString, [title, shortname ?? universe.shortname, is_public, discussion_enabled, discussion_open, mcpItems, mcpNotes, mcpDiscussions, obj_data, new Date(), universe.id]);
+    await kysely
+      .updateTable('universe')
+      .set({
+        title,
+        shortname: shortname ?? universe.shortname,
+        is_public,
+        discussion_enabled,
+        discussion_open,
+        mcp_items_enabled: mcpItems,
+        mcp_notes_enabled: mcpNotes,
+        mcp_discussions_enabled: mcpDiscussions,
+        obj_data: typeof obj_data === 'string' ? obj_data : JSON.stringify(obj_data),
+        updated_at: new Date(),
+      })
+      .where('id', '=', universe.id)
+      .execute();
     return universe.id;
   }
 
-  async putData(user: User | undefined, universeShortname: string, changes: Record<string, any>): Promise<ResultSetHeader> {
+  async putData(user: User | undefined, universeShortname: string, changes: Record<string, any>): Promise<{ numUpdatedRows: number }> {
     if (!user) throw new UnauthorizedError();
     if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new ValidationError('Data must be an object.');
 
     const universe = await this.getOne(user, { shortname: universeShortname }, perms.WRITE);
     const obj_data = { ...universe.obj_data, ...changes };
 
-    const queryString = 'UPDATE universe SET obj_data = ?, updated_at = ? WHERE id = ?';
-    return await executeQuery<ResultSetHeader>(queryString, [JSON.stringify(obj_data), new Date(), universe.id]);
+    const result = await kysely
+      .updateTable('universe')
+      .set({ obj_data: JSON.stringify(obj_data), updated_at: new Date() })
+      .where('id', '=', universe.id)
+      .executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  async putPermissions(user: User | undefined, shortname: string, targetUser: User, permission_level: perms): Promise<ResultSetHeader> {
+  async putPermissions(user: User | undefined, shortname: string, targetUser: User, permission_level: perms): Promise<{ numDeletedRows: number } | { numUpdatedRows: number } | { insertId: number }> {
     if (!user) throw new UnauthorizedError();
 
     // If we have a pending invite to this universe for the same permission level, use the admin who invited us to assign the new permission level.
@@ -389,56 +423,60 @@ export class UniverseAPI {
       if (!ownerWouldStillExist) throw new ValidationError('Cannot remove the last owner.');
     }
 
-    let query: Promise<ResultSetHeader>;
+    let result: { numDeletedRows: number } | { numUpdatedRows: number } | { insertId: number };
     if (targetUser.id in universe.author_permissions) {
       if (permission_level === perms.NONE) {
-        query = executeQuery(
-          'DELETE FROM authoruniverse WHERE universe_id = ? AND user_id = ?',
-          [universe.id, targetUser.id],
-        );
+        const deleted = await kysely
+          .deleteFrom('authoruniverse')
+          .where('universe_id', '=', universe.id)
+          .where('user_id', '=', targetUser.id)
+          .executeTakeFirstOrThrow();
+        result = { numDeletedRows: Number(deleted.numDeletedRows) };
       } else {
-        query = executeQuery(`
-          UPDATE authoruniverse 
-          SET permission_level = ? 
-          WHERE user_id = ? AND universe_id = ?`,
-          [permission_level, targetUser.id, universe.id],
-        );
+        const updated = await kysely
+          .updateTable('authoruniverse')
+          .set({ permission_level })
+          .where('user_id', '=', targetUser.id)
+          .where('universe_id', '=', universe.id)
+          .executeTakeFirstOrThrow();
+        result = { numUpdatedRows: Number(updated.numUpdatedRows) };
       }
     } else {
-      query = executeQuery(`
-        INSERT INTO authoruniverse (permission_level, universe_id, user_id) VALUES (?, ?, ?)`,
-        [permission_level, universe.id, targetUser.id],
-      );
+      const inserted = await kysely
+        .insertInto('authoruniverse')
+        .values({ permission_level, universe_id: universe.id, user_id: targetUser.id })
+        .executeTakeFirstOrThrow();
+      result = { insertId: Number(inserted.insertId ?? 0) };
     }
 
-    await executeQuery(
-      'DELETE FROM universeaccessrequest WHERE universe_id = ? AND user_id = ?',
-      [universe.id, targetUser.id],
-    );
+    await kysely
+      .deleteFrom('universeaccessrequest')
+      .where('universe_id', '=', universe.id)
+      .where('user_id', '=', targetUser.id)
+      .execute();
 
-    return await query;
+    return result;
   }
 
-  async putUserFollowing(user: User | undefined, shortname: string, isFollowing: boolean): Promise<ResultSetHeader> {
+  async putUserFollowing(user: User | undefined, shortname: string, isFollowing: boolean): Promise<{ numUpdatedRows: number } | { insertId: number }> {
     if (!user) throw new UnauthorizedError();
     const universe = await this.getOne(user, { shortname }, perms.READ);
 
-    let query: Promise<ResultSetHeader>;
     if (user.id in universe.followers) {
-      query = executeQuery(`
-        UPDATE followeruniverse 
-        SET is_following = ? 
-        WHERE user_id = ? AND universe_id = ?;`,
-        [isFollowing, user.id, universe.id],
-      );
+      const updated = await kysely
+        .updateTable('followeruniverse')
+        .set({ is_following: isFollowing })
+        .where('user_id', '=', user.id)
+        .where('universe_id', '=', universe.id)
+        .executeTakeFirstOrThrow();
+      return { numUpdatedRows: Number(updated.numUpdatedRows) };
     } else {
-      query = executeQuery(`
-        INSERT INTO followeruniverse (is_following, universe_id, user_id) VALUES (?, ?, ?)`,
-        [isFollowing, universe.id, user.id],
-      );
+      const inserted = await kysely
+        .insertInto('followeruniverse')
+        .values({ is_following: isFollowing, universe_id: universe.id, user_id: user.id })
+        .executeTakeFirstOrThrow();
+      return { insertId: Number(inserted.insertId ?? 0) };
     }
-
-    return await query;
   }
 
   async putUserSponsoring(user: User | undefined, shortname: string, tier: Tier): Promise<void> {
@@ -449,68 +487,70 @@ export class UniverseAPI {
     }
     if (universe.tier === tier) return; // Already at desired tier, do nothing
 
-    let query;
     if (tier === tiers.FREE) {
-      if (universe.tier === null) return; // Already free, do nothing
-      query = executeQuery(`DELETE FROM usersponsoreduniverse WHERE universe_id = ?`, [universe.id]);
+      if (universe.sponsoring_user === null) return; // Already free, do nothing
+      await kysely.deleteFrom('usersponsoreduniverse').where('universe_id', '=', universe.id).execute();
     } else {
-      if (user.plan === undefined) throw new ValidationError('User plan is required.');
+      if (user.plan === undefined || user.plan === null) throw new ValidationError('User plan is required.');
       const sponsored = await this.api.user.getSponsoredUniverses(user);
       const sponsoredAtTier = sponsored.filter(row => row.tier === tier)[0]?.universes.length;
       if (sponsoredAtTier >= tierAllowance[user.plan][tier]) throw new ForbiddenError();
-      if (universe.tier === null) {
-        query = executeQuery(`
-          INSERT INTO usersponsoreduniverse (universe_id, user_id, tier) VALUES (?, ?, ?)`,
-          [universe.id, user.id, tier],
-        );
+      if (universe.sponsoring_user === null) {
+        await kysely
+          .insertInto('usersponsoreduniverse')
+          .values({ universe_id: universe.id, user_id: user.id, tier })
+          .execute();
       } else {
-        query = executeQuery(`
-          UPDATE usersponsoreduniverse 
-          SET user_id = ? AND tier = ?
-          WHERE universe_id = ?;`,
-          [user.id, tier, universe.id],
-        );
+        await kysely
+          .updateTable('usersponsoreduniverse')
+          .set({ user_id: user.id, tier })
+          .where('universe_id', '=', universe.id)
+          .execute();
       }
     }
-
-    await query;
   }
 
-  async getUserAccessRequestIfExists(user: User | undefined, shortname: string): Promise<UniverseAccessRequest | null> {
+  async getUserAccessRequestIfExists(user: User | undefined, shortname: string): Promise<UniverseAccessRequest<boolean | null> | null> {
     if (!user) throw new UnauthorizedError();
 
-    const universe = (await executeQuery('SELECT * FROM universe WHERE shortname = ?', [shortname]))[0];
+    const universe = await kysely.selectFrom('universe').selectAll().where('shortname', '=', shortname).executeTakeFirst();
     if (!universe) throw new NotFoundError();
 
-    const request = (await executeQuery(
-      'SELECT ua.*, user.username FROM universeaccessrequest AS ua INNER JOIN user ON user.id = ua.user_id WHERE ua.universe_id = ? AND ua.user_id = ?',
-      [universe.id, user.id],
-    ))[0] as UniverseAccessRequest;
+    const request = await kysely
+      .selectFrom('universeaccessrequest as ua')
+      .innerJoin('user', 'user.id', 'ua.user_id')
+      .selectAll('ua')
+      .select('user.username')
+      .where('ua.universe_id', '=', universe.id)
+      .where('ua.user_id', '=', user.id)
+      .executeTakeFirst();
     if (!request) return null;
 
     return request;
   }
 
   async getAccessRequests(user: User | undefined, shortname: string): Promise<UniverseAccessRequestListing<false>[]> {
-    return this._getAccessRequests(user, shortname, false);
+    return this._getAccessRequests(user, shortname, false) as Promise<UniverseAccessRequestListing<false>[]>;
   }
 
   async getAccessInvites(user: User | undefined, shortname: string): Promise<UniverseAccessRequestListing<true>[]> {
-    return this._getAccessRequests(user, shortname, true);
+    return this._getAccessRequests(user, shortname, true) as Promise<UniverseAccessRequestListing<true>[]>;
   }
 
-  private async _getAccessRequests<T extends boolean>(user: User | undefined, shortname: string, getInvites: T): Promise<UniverseAccessRequestListing<T>[]> {
+  private async _getAccessRequests(user: User | undefined, shortname: string, getInvites: boolean): Promise<UniverseAccessRequestListing<boolean>[]> {
     if (!user) throw new UnauthorizedError();
 
     const universe = await this.getOne(user, { shortname }, perms.ADMIN);
 
-    const requests = await executeQuery(`
-      SELECT ua.*, user.username, inviter.username AS inviter_username
-      FROM universeaccessrequest AS ua
-      INNER JOIN user ON user.id = ua.user_id
-      LEFT JOIN user AS inviter ON inviter.id = ua.inviter_id
-      WHERE ua.universe_id = ? AND ua.is_invite = ?
-    `, [universe.id, getInvites]) as UniverseAccessRequestListing<T>[];
+    const requests = await kysely
+      .selectFrom('universeaccessrequest as ua')
+      .innerJoin('user', 'user.id', 'ua.user_id')
+      .leftJoin('user as inviter', 'inviter.id', 'ua.inviter_id')
+      .selectAll('ua')
+      .select(['user.username', 'inviter.username as inviter_username'])
+      .where('ua.universe_id', '=', universe.id)
+      .where('ua.is_invite', '=', getInvites)
+      .execute();
 
     return requests;
   }
@@ -518,21 +558,26 @@ export class UniverseAPI {
   async getUserAccessInvites(user: User | undefined): Promise<UserAccessInvite[]> {
     if (!user) throw new UnauthorizedError();
 
-    return await executeQuery(`
-      SELECT universe.shortname AS universe_shortname, universe.title AS universe_title, ua.permission_level, inviter.username AS inviter_username
-      FROM universeaccessrequest AS ua
-      INNER JOIN universe ON universe.id = ua.universe_id
-      LEFT JOIN user AS inviter ON inviter.id = ua.inviter_id
-      WHERE ua.user_id = ? AND ua.is_invite = TRUE
-      ORDER BY universe.title
-    `, [user.id]) as UserAccessInvite[];
+    const invites = await kysely
+      .selectFrom('universeaccessrequest as ua')
+      .innerJoin('universe', 'universe.id', 'ua.universe_id')
+      .leftJoin('user as inviter', 'inviter.id', 'ua.inviter_id')
+      .select([
+        'universe.shortname as universe_shortname', 'universe.title as universe_title',
+        'ua.permission_level', 'inviter.username as inviter_username',
+      ])
+      .where('ua.user_id', '=', user.id)
+      .where('ua.is_invite', '=', true)
+      .orderBy('universe.title')
+      .execute();
+    return invites;
   }
 
   async putAccessRequest(user: User | undefined, shortname: string, permissionLevel: perms): Promise<void> {
     await this._putAccessRequest(user, shortname, permissionLevel);
     user = user as User;
 
-    const universe = (await executeQuery('SELECT * FROM universe WHERE shortname = ?', [shortname]))[0];
+    const universe = await kysely.selectFrom('universe').selectAll().where('shortname', '=', shortname).executeTakeFirstOrThrow();
     const target = await this.api.user.getOne({ 'user.id': universe.author_id }).catch(handleAsNull(NotFoundError));
 
     if (target) {
@@ -563,7 +608,7 @@ export class UniverseAPI {
   private async _putAccessRequest(user: User | undefined, shortname: string, permissionLevel: perms, invitingAdmin?: User): Promise<boolean> {
     if (!user) throw new UnauthorizedError();
 
-    const universe = (await executeQuery('SELECT * FROM universe WHERE shortname = ?', [shortname]))[0];
+    const universe = await kysely.selectFrom('universe').selectAll().where('shortname', '=', shortname).executeTakeFirst();
     if (!universe) throw new NotFoundError();
 
     const request = await this.getUserAccessRequestIfExists(user, shortname);
@@ -572,10 +617,13 @@ export class UniverseAPI {
       else await this.delAccessRequest(user, shortname, user);
     }
 
-    await executeQuery<ResultSetHeader>(
-      'INSERT INTO universeaccessrequest (universe_id, user_id, permission_level, is_invite, inviter_id) VALUES (?, ?, ?, ?, ?)',
-      [universe.id, user.id, permissionLevel, invitingAdmin !== undefined, invitingAdmin?.id ?? null],
-    );
+    await kysely
+      .insertInto('universeaccessrequest')
+      .values({
+        universe_id: universe.id, user_id: user.id, permission_level: permissionLevel,
+        is_invite: invitingAdmin !== undefined, inviter_id: invitingAdmin?.id ?? null,
+      })
+      .execute();
 
     return true;
   }
@@ -586,32 +634,34 @@ export class UniverseAPI {
     const permsUniverse = await this.getOne(user, { shortname }, perms.ADMIN).catch(handleAsNull(ForbiddenError));
     if (!(permsUniverse || (user.id === requestingUser.id))) throw new ForbiddenError();
 
-    const universe = (await executeQuery('SELECT * FROM universe WHERE shortname = ?', [shortname]))[0];
-    await executeQuery(
-      'DELETE FROM universeaccessrequest WHERE universe_id = ? AND user_id = ?',
-      [universe.id, requestingUser.id],
-    );
+    const universe = await kysely.selectFrom('universe').selectAll().where('shortname', '=', shortname).executeTakeFirstOrThrow();
+    await kysely
+      .deleteFrom('universeaccessrequest')
+      .where('universe_id', '=', universe.id)
+      .where('user_id', '=', requestingUser.id)
+      .execute();
   }
 
   async del(user: User | undefined, shortname: string): Promise<void> {
     const universe = await this.getOne(user, { shortname }, perms.OWNER);
 
-    await withTransaction(async (conn) => {
-      await conn.execute(`
+    await withTransaction(async (trx) => {
+      // More DELETE-with-JOINs that Kysely doesn't support
+      await sql`
         DELETE comment
         FROM comment
         INNER JOIN threadcomment AS tc ON tc.comment_id = comment.id
         INNER JOIN discussion ON tc.thread_id = discussion.id
-        WHERE discussion.universe_id = ?;
-      `, [universe.id]);
-      await conn.execute(`
+        WHERE discussion.universe_id = ${universe.id}
+      `.execute(trx);
+      await sql`
         DELETE comment
         FROM comment
         INNER JOIN itemcomment AS ic ON ic.comment_id = comment.id
         INNER JOIN item ON ic.item_id = item.id
-        WHERE item.universe_id = ?;
-      `, [universe.id]);
-      await conn.execute(`DELETE FROM universe WHERE id = ?;`, [universe.id]);
+        WHERE item.universe_id = ${universe.id}
+      `.execute(trx);
+      await trx.deleteFrom('universe').where('id', '=', universe.id).execute();
     });
 
     await embedder.deleteForUniverse(universe.id);

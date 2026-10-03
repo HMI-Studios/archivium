@@ -175,7 +175,7 @@ CREATE TABLE threadcomment (
 
 CREATE TABLE note (
   id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  uuid VARCHAR(36) UNIQUE,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
   title VARCHAR(64),
   body JSON,
   is_public BOOLEAN,
@@ -364,8 +364,8 @@ CREATE TABLE maplocation (
   map_id INT NOT NULL,
   item_id INT,
   title VARCHAR(64),
-  x DOUBLE,
-  y DOUBLE,
+  x DOUBLE NOT NULL,
+  y DOUBLE NOT NULL,
   FOREIGN KEY (item_id) REFERENCES item (id),
   FOREIGN KEY (map_id) REFERENCES map (id) ON DELETE CASCADE
 );
@@ -396,7 +396,7 @@ CREATE TABLE universeaccessrequest (
   universe_id INT NOT NULL,
   user_id INT NOT NULL,
   permission_level TINYINT NOT NULL,
-  is_invite BOOLEAN DEFAULT FALSE,
+  is_invite BOOLEAN NOT NULL DEFAULT FALSE,
   inviter_id INT,
   FOREIGN KEY (universe_id) REFERENCES universe (id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE,

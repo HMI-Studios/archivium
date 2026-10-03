@@ -1,4 +1,3 @@
-import { ResultSetHeader } from 'mysql2/promise';
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
@@ -160,7 +159,7 @@ app.post('/login', async (req, res, next) => {
 
 app.post('/signup', ReCaptcha.verifyReCaptcha, async (req, res, next) => {
   try {
-    const data = await api.user.post( req.body ) as ResultSetHeader;
+    const data = await api.user.post( req.body );
     try {
       await api.session.put({ id: req.session.id }, { user_id: data.insertId });
       res.status(201);

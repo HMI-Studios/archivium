@@ -1,8 +1,9 @@
-import { executeQuery, parseData, withTransaction, perms, plans } from '../utils';
+import { sql } from 'kysely';
+import { withTransaction, perms, plans } from '../utils';
+import { kysely } from '../../db/kysely';
 import utils from '../../lib/hashUtils';
 import logger from '../../logger';
 import { SITE_OWNER_EMAIL } from '../../config';
-import { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { API } from '..';
 import { RequestError, ModelError, ValidationError, UnauthorizedError, ForbiddenError, NotFoundError } from '../../errors';
 import { HttpStatusCode } from 'axios';
@@ -11,7 +12,6 @@ import { Theme, ThemeName } from '../../themes';
 export type UserSponsoredUniverses = { tier: number, universes: string[], universe_shorts: string[] }[];
 
 export type UserImage = {
-  user_id: number,
   id: number,
   name: string,
   mimetype: string,
@@ -30,12 +30,12 @@ export type BasicUser = {
 
 export type User = BasicUser & {
   email: string,
-  verified: boolean,
-  suspect: boolean,
-  email_notifications: boolean,
+  verified: boolean | null,
+  suspect: boolean | null,
+  email_notifications: boolean | null,
   preferred_theme: ThemeName | null,
   custom_theme: Theme | null,
-  plan: plans,
+  plan: plans | null,
   notifications: number,
 };
 
@@ -84,18 +84,16 @@ export class UserImageAPI {
   async getByUsername(username: string): Promise<UserImage | undefined> {
     const user = await this.user.getOne({ 'user.username': username });
     if (!user) throw new NotFoundError();
-    let queryString = `
-      SELECT
-        ui.user_id, image.id, image.name, image.mimetype, image.data
-      FROM userimage AS ui
-      INNER JOIN image ON image.id = ui.image_id
-      WHERE ui.user_id = ?;
-    `;
-    const image = (await executeQuery(queryString, [user.id]))[0] as UserImage | undefined;
+    const image = await kysely
+      .selectFrom('userimage as ui')
+      .innerJoin('image', 'image.id', 'ui.image_id')
+      .select(['image.id', 'image.name', 'image.mimetype', 'image.data'])
+      .where('ui.user_id', '=', user.id)
+      .executeTakeFirst();
     return image;
   }
 
-  async post(sessionUser: User | undefined, file: Express.Multer.File | undefined, username: string): Promise<ResultSetHeader> {
+  async post(sessionUser: User | undefined, file: Express.Multer.File | undefined, username: string): Promise<{ insertId: number }> {
     if (!file) throw new ValidationError('No file provided');
     if (!sessionUser) throw new UnauthorizedError();
     if (sessionUser.username !== username) throw new ForbiddenError();
@@ -103,36 +101,35 @@ export class UserImageAPI {
     const { originalname, buffer, mimetype } = file;
     const user = await this.user.getOne({ 'user.username': username });
 
-    let data!: ResultSetHeader;
-    await withTransaction(async (conn: PoolConnection) => {
-      await conn.execute(`
+    let data!: { insertId: number };
+    await withTransaction(async (trx) => {
+      // More DELETE-with-JOINs that Kysely doesn't support
+      await sql`
         DELETE image FROM image
         INNER JOIN userimage AS ui ON ui.image_id = image.id
-        WHERE ui.user_id = ?
-      `, [user.id]);
+        WHERE ui.user_id = ${user.id}
+      `.execute(trx);
 
-      [data] = await conn.execute<ResultSetHeader>(
-        `INSERT INTO image (name, mimetype, data) VALUES (?, ?, ?)`,
-        [originalname.substring(0, 64), mimetype, buffer],
-      );
+      const inserted = await trx
+        .insertInto('image')
+        .values({ name: originalname.substring(0, 64), mimetype, data: buffer })
+        .executeTakeFirstOrThrow();
+      data = { insertId: Number(inserted.insertId ?? 0) };
 
-      await conn.execute<ResultSetHeader>(
-        `INSERT INTO userimage (user_id, image_id) VALUES (?, ?)`,
-        [user.id, data.insertId],
-      );
+      await trx.insertInto('userimage').values({ user_id: user.id, image_id: data.insertId }).execute();
     });
     return data;
   }
 
-  async del(sessionUser: User | undefined, username: string): Promise<ResultSetHeader> {
+  async del(sessionUser: User | undefined, username: string): Promise<void> {
     if (!sessionUser) throw new UnauthorizedError();
     if (sessionUser.username !== username) throw new ForbiddenError();
     const user = await this.user.getOne({ 'user.username': username });
-    return await executeQuery<ResultSetHeader>(`
+    await sql`
       DELETE image FROM image
       INNER JOIN userimage AS ui ON ui.image_id = image.id
-      WHERE ui.user_id = ?
-    `, [user.id]);
+      WHERE ui.user_id = ${user.id}
+    `.execute(kysely);
   }
 }
 
@@ -158,28 +155,35 @@ export class UserAPI {
     };
   }
 
-  private async fetchUser<T extends User>(options: any, includeAuth=false, includeNotifs=false): Promise<T> {
+  private async fetchUser<T extends User>(options: { [key: string]: any }, includeAuth = false, includeNotifs = false): Promise<T> {
     if (!options || Object.keys(options).length === 0) throw new ValidationError('options required for api.get.user');
-    const parsedOptions = parseData(options);
-    const queryString = `
-      SELECT
-        user.id, user.username, user.email, user.password, user.salt, user.created_at,user.updated_at,
-        user.verified, user.suspect, user.email_notifications, user.preferred_theme, user.custom_theme,
-        ${includeAuth ? 'user.password, user.salt,' : ''}
-        (ui.user_id IS NOT NULL) AS hasPfp,
-        up.plan
-        ${includeNotifs ? ', COUNT(notif.id) AS notifications' : ''}
-      FROM user
-      LEFT JOIN userimage AS ui ON user.id = ui.user_id
-      LEFT JOIN userplan AS up ON user.id = up.user_id
-      ${includeNotifs ? 'LEFT JOIN sentnotification AS notif ON user.id = notif.user_id AND NOT notif.is_read' : ''}
-      WHERE ${parsedOptions.strings.join(' AND ')}
-      GROUP BY user.id, up.plan
-      LIMIT 1;
-    `;
-    const user = (await executeQuery(queryString, parsedOptions.values))[0] as T;
+
+    let query = kysely
+      .selectFrom('user')
+      .leftJoin('userimage as ui', 'ui.user_id', 'user.id')
+      .leftJoin('userplan as up', 'up.user_id', 'user.id')
+      .select([
+        'user.id', 'user.username', 'user.email', 'user.created_at', 'user.updated_at',
+        'user.verified', 'user.suspect', 'user.email_notifications', 'user.preferred_theme', 'user.custom_theme',
+        'up.plan',
+      ])
+      .select(sql<boolean>`(ui.user_id IS NOT NULL)`.as('hasPfp'))
+      .$if(includeAuth, (qb) => qb.select(['user.password', 'user.salt']))
+      .$if(includeNotifs, (qb) => qb
+        .leftJoin('sentnotification as notif', (join) => join
+          .onRef('notif.user_id', '=', 'user.id')
+          .on('notif.is_read', '=', false))
+        .select((eb) => eb.fn.count<number>('notif.id').as('notifications')))
+      .groupBy(['user.id', 'up.plan']);
+
+    for (const [key, value] of Object.entries(options)) {
+      if (value === undefined) continue;
+      query = query.where(kysely.dynamic.ref(key), '=', value);
+    }
+
+    const user = await query.limit(1).executeTakeFirst();
     if (!user) throw new NotFoundError();
-    return user;
+    return user as T;
   }
 
   /**
@@ -192,7 +196,7 @@ export class UserAPI {
   }
 
   /**
-   * 
+   *
    * @param {*} options
    * @returns {Promise<User>}
    */
@@ -203,65 +207,68 @@ export class UserAPI {
   /**
    * 
    * @param {*} options
-   * @returns {Promise<User[]>}
+   * @returns {Promise<Pick<User, 'id' | 'username' | 'created_at' | 'updated_at'> & Partial<Pick<User, 'email' | 'hasPfp'>>>[]}
    */
-  async getMany(options: any=null, includeEmail=false): Promise<User[]> {
-    const parsedOptions = parseData(options);
-    let queryString;
-    if (options) queryString = `
-      SELECT 
-        user.id, user.username, user.created_at, user.updated_at, ${includeEmail ? 'user.email, ' : ''}
-        (ui.user_id IS NOT NULL) as hasPfp
-      FROM user
-      LEFT JOIN userimage AS ui ON user.id = ui.user_id
-      WHERE ${parsedOptions.strings.join(' AND ')};
-    `;
-    else queryString = `SELECT id, username, created_at, updated_at ${includeEmail ? ', email' : ''} FROM user;`;
-    const users = await executeQuery(queryString, parsedOptions.values) as User[];
-    return users;
+  async getMany(
+    options: { [key: string]: any } | null = null,
+    includeEmail = false,
+  ): Promise<(Pick<User, 'id' | 'username' | 'created_at' | 'updated_at'> & Partial<Pick<User, 'email' | 'hasPfp'>>)[]> {
+    let query = kysely
+      .selectFrom('user')
+      .select(['user.id', 'user.username', 'user.created_at', 'user.updated_at'])
+      .$if(includeEmail, (qb) => qb.select('user.email'))
+      .$if(options !== undefined && options !== null, (qb) => qb
+        .leftJoin('userimage as ui', 'ui.user_id', 'user.id')
+        .select(sql<boolean>`(ui.user_id IS NOT NULL)`.as('hasPfp')));
+
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value === undefined) continue;
+        query = query.where(kysely.dynamic.ref(key), '=', value);
+      }
+    }
+
+    return await query.execute();
   }
 
-  async getByUniverseShortname(user: User | undefined, shortname: string): Promise<(User & { items_authored: number })[]> {
+  async getByUniverseShortname(
+    user: User | undefined,
+    shortname: string,
+  ): Promise<(Pick<User, 'id' | 'username' | 'created_at' | 'updated_at' | 'email' | 'plan' | 'hasPfp'> & { items_authored: number })[]> {
     const universe = await this.api.universe.getOne(user, { shortname });
-    const queryString = `
-      SELECT 
-        user.id,
-        user.username,
-        user.created_at,
-        user.updated_at,
-        user.email,
-        userplan.plan,
-        COUNT(item.id) AS items_authored,
-        (ui.user_id IS NOT NULL) as hasPfp
-      FROM user
-      INNER JOIN authoruniverse AS au ON au.user_id = user.id
-      LEFT JOIN item ON item.universe_id = au.universe_id AND item.author_id = user.id
-      LEFT JOIN userimage AS ui ON user.id = ui.user_id
-      LEFT JOIN userplan ON user.id = userplan.user_id
-      WHERE au.universe_id = ?
-      GROUP BY user.id, userplan.plan;
-    `;
-    const users = await executeQuery(queryString, [universe.id]) as (User & { items_authored: number })[];
-    return users;
+    return await kysely
+      .selectFrom('user')
+      .innerJoin('authoruniverse as au', 'au.user_id', 'user.id')
+      .leftJoin('item', (join) => join
+        .onRef('item.universe_id', '=', 'au.universe_id')
+        .onRef('item.author_id', '=', 'user.id'))
+      .leftJoin('userimage as ui', 'ui.user_id', 'user.id')
+      .leftJoin('userplan', 'userplan.user_id', 'user.id')
+      .select([
+        'user.id', 'user.username', 'user.created_at', 'user.updated_at', 'user.email', 'userplan.plan',
+      ])
+      .select((eb) => eb.fn.count<number>('item.id').as('items_authored'))
+      .select(sql<boolean>`(ui.user_id IS NOT NULL)`.as('hasPfp'))
+      .where('au.universe_id', '=', universe.id)
+      .groupBy(['user.id', 'userplan.plan'])
+      .execute();
   }
 
   async getSponsoredUniverses(user: User | undefined): Promise<UserSponsoredUniverses> {
     if (!user) throw new ValidationError('User required');
-    const queryString = `
-      SELECT
-        usu.tier,
-        JSON_ARRAYAGG(universe.title) AS universes,
-        JSON_ARRAYAGG(universe.shortname) AS universe_shorts
-      FROM usersponsoreduniverse AS usu
-      INNER JOIN universe ON usu.universe_id = universe.id
-      WHERE usu.user_id = ?
-      GROUP BY usu.tier;
-    `;
-    const universes = await executeQuery(queryString, [user.id]) as UserSponsoredUniverses;
+    const universes = await kysely
+      .selectFrom('usersponsoreduniverse as usu')
+      .innerJoin('universe', 'universe.id', 'usu.universe_id')
+      .select('usu.tier')
+      .select(sql<string[]>`JSON_ARRAYAGG(universe.title)`.as('universes'))
+      .select(sql<string[]>`JSON_ARRAYAGG(universe.shortname)`.as('universe_shorts'))
+      .where('usu.user_id', '=', user.id)
+      .groupBy('usu.tier')
+      .execute();
     return universes;
   }
 
-  post({ username, email, password, hp }: any) {
+  async post({ username, email, password, hp }: any): Promise<{ insertId: number }> {
     const salt = utils.createRandom32String();
 
     if (!username) throw new Error('username is required');
@@ -273,81 +280,68 @@ export class UserAPI {
 
     const suspect = hp !== '';
 
-    const queryString = `
-      INSERT INTO user (
+    const result = await kysely
+      .insertInto('user')
+      .values({
         username,
         email,
         salt,
-        password,
-        created_at,
-        updated_at,
-        suspect
-      ) VALUES (?, ?, ?, ?, ?, ?, ?);
-    `;
-    return executeQuery<ResultSetHeader>(queryString, [
-      username,
-      email,
-      salt,
-      utils.createHash(password, salt),
-      new Date(),
-      new Date(),
-      suspect
-    ]);
+        password: utils.createHash(password, salt),
+        created_at: new Date(),
+        updated_at: new Date(),
+        suspect,
+      })
+      .executeTakeFirstOrThrow();
+    return { insertId: Number(result.insertId ?? 0) };
   }
 
   /**
-   * 
-   * @param {*} attempted 
-   * @param {*} password 
-   * @param {*} salt 
-   * @returns 
+   *
+   * @param {*} attempted
+   * @param {*} password
+   * @param {*} salt
+   * @returns
    */
   validatePassword(attempted: any, password: any, salt: any) {
     return utils.compareHash(attempted, password, salt);
   }
 
   /**
-   * 
-   * @param {*} user_id 
-   * @param {*} userIDToPut 
-   * @param {{ updated_at?, verified? }} param2 
-   * @returns 
+   *
+   * @param {*} user_id
+   * @param {*} userIDToPut
+   * @param {{ updated_at?, verified? }} param2
+   * @returns
    */
   async put(user_id: any, userIDToPut: any, { updated_at, verified }: { updated_at?; verified?; }) {
-    const changes = { updated_at, verified };
-
     if (Number(user_id) !== Number(userIDToPut)) return [403];
 
-    const keys = Object.keys(changes).filter(key => changes[key] !== undefined);
-    const values = keys.map(key => changes[key]);
-    const queryString = `
-      UPDATE user
-      SET
-        ${keys.map(key => `${key} = ?`).join(', ')}
-      WHERE id = ?;
-    `;
-    return [200, await executeQuery(queryString, [...values, userIDToPut])];
+    const setObj: { updated_at?: Date, verified?: boolean } = {};
+    if (updated_at !== undefined) setObj.updated_at = updated_at;
+    if (verified !== undefined) setObj.verified = verified;
+
+    const result = await kysely.updateTable('user').set(setObj).where('id', '=', userIDToPut).executeTakeFirstOrThrow();
+    return [200, { numUpdatedRows: Number(result.numUpdatedRows) }];
   }
 
-  async putPreferences(sessionUser: User | undefined, username: string, body: { preferred_theme: string, custom_theme: Theme }): Promise<ResultSetHeader> {
+  async putPreferences(sessionUser: User | undefined, username: string, body: { preferred_theme: string, custom_theme: Theme }): Promise<{ numUpdatedRows: number }> {
     if (!sessionUser) throw new UnauthorizedError();
     const { preferred_theme, custom_theme } = body;
     const user = await this.getOne({ 'user.username': username });
     if (Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
-    const changes = { preferred_theme, custom_theme };
-    const keys = Object.keys(changes).filter(key => changes[key] !== undefined);
-    if (keys.length === 0) throw new ValidationError('No changes provided');
-    const values = keys.map(key => changes[key]);
-    const queryString = `
-      UPDATE user
-      SET
-        ${keys.map(key => `${key} = ?`).join(', ')}
-      WHERE id = ?;
-    `;
-    return await executeQuery<ResultSetHeader>(queryString, [...values, user.id]);
+
+    const setObj: { preferred_theme?: string, custom_theme?: string | null } = {};
+    if (preferred_theme !== undefined) setObj.preferred_theme = preferred_theme;
+    if (custom_theme !== undefined) {
+      setObj.custom_theme = custom_theme === null || typeof custom_theme === 'string' ? custom_theme : JSON.stringify(custom_theme);
+    }
+    if (Object.keys(setObj).length === 0) throw new ValidationError('No changes provided');
+
+    const result = await kysely.updateTable('user').set(setObj).where('id', '=', user.id).executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  async putUsername(sessionUser: User | undefined, oldUsername: string, newUsername: string): Promise<Date | ResultSetHeader | string> {
+  async putUsername(sessionUser: User | undefined, oldUsername: string, newUsername: string): Promise<Date | { numUpdatedRows: number } | string> {
     const user = await this.getOne({ 'user.username': oldUsername });
     if (!user) throw new NotFoundError();
     if (!sessionUser || Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
@@ -356,68 +350,55 @@ export class UserAPI {
     const now = new Date();
     const cutoffInterval = 30 * 24 * 60 * 60 * 1000; // 30 Days
     const cutoffDate = new Date(now.getTime() - cutoffInterval);
-    const recentChanges = await executeQuery(`
-      SELECT *
-      FROM usernamechange
-      WHERE changed_for = ? AND changed_at >= ?
-      ORDER BY changed_at DESC;
-    `, [user.id, cutoffDate]);
+    const recentChanges = await kysely
+      .selectFrom('usernamechange')
+      .selectAll()
+      .where('changed_for', '=', user.id)
+      .where('changed_at', '>=', cutoffDate)
+      .orderBy('changed_at', 'desc')
+      .execute();
     if (recentChanges.length > 0) {
       const tryAgainOn = new Date(recentChanges[0].changed_at.getTime() + cutoffInterval);
       throw new RequestError('Username recently changed', { code: HttpStatusCode.TooManyRequests, data: tryAgainOn });
     }
     try {
-      const queryString = `
-        UPDATE user
-        SET
-          username = ?
-        WHERE id = ?;
-      `;
-      const data = await executeQuery<ResultSetHeader>(queryString, [newUsername, user.id]);
-      await executeQuery(`
-        INSERT INTO usernamechange (
-          changed_for,
-          changed_from,
-          changed_to,
-          changed_at
-        ) VALUES (?, ?, ?, ?)
-      `, [user.id, oldUsername, newUsername, new Date()]);
-      return data;
+      const result = await kysely.updateTable('user').set({ username: newUsername }).where('id', '=', user.id).executeTakeFirstOrThrow();
+      await kysely
+        .insertInto('usernamechange')
+        .values({ changed_for: user.id, changed_from: oldUsername, changed_to: newUsername, changed_at: new Date() })
+        .execute();
+      return { numUpdatedRows: Number(result.numUpdatedRows) };
     } catch (err) {
       if (err.code === 'ER_DUP_ENTRY') throw new ValidationError('Username already taken.');
       throw err;
     }
   }
 
-  async putEmail(sessionUser: User | undefined, username: string, { email, password }): Promise<ResultSetHeader> {
+  async putEmail(sessionUser: User | undefined, username: string, { email, password }): Promise<{ numUpdatedRows: number }> {
     const user = await this.getOneWithAuth({ 'user.username': username });
     if (!sessionUser || Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
     const isCorrectLogin = this.validatePassword(password, user.password, user.salt);
     if (!isCorrectLogin) throw new UnauthorizedError('Incorrect password');
-    const data = await executeQuery<ResultSetHeader>(`
-      UPDATE user
-      SET
-        email = ?,
-        verified = ?
-      WHERE id = ?
-    `, [email, false, user.id]);
-    return data;
+    const result = await kysely
+      .updateTable('user')
+      .set({ email, verified: false })
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
-  async putPassword(sessionUser: User | undefined, username: string, { oldPassword, newPassword }): Promise<ResultSetHeader> {
+  async putPassword(sessionUser: User | undefined, username: string, { oldPassword, newPassword }): Promise<{ numUpdatedRows: number }> {
     const user = await this.getOneWithAuth({ 'user.username': username });
     if (!sessionUser || Number(sessionUser.id) !== Number(user.id)) throw new ForbiddenError();
     const isCorrectLogin = this.validatePassword(oldPassword, user.password, user.salt);
     if (!isCorrectLogin) throw new UnauthorizedError('Incorrect password');
     const salt = utils.createRandom32String();
-    const data = await executeQuery<ResultSetHeader>(`
-      UPDATE user
-      SET
-        salt = ?,
-        password = ?
-      WHERE id = ?
-    `, [salt, utils.createHash(newPassword, salt), user.id]);
-    return data;
+    const result = await kysely
+      .updateTable('user')
+      .set({ salt, password: utils.createHash(newPassword, salt) })
+      .where('id', '=', user.id)
+      .executeTakeFirstOrThrow();
+    return { numUpdatedRows: Number(result.numUpdatedRows) };
   }
 
   /**
@@ -426,14 +407,14 @@ export class UserAPI {
    * @returns {Promise<[number, User?]>}
    */
   async doDeleteUser(userId): Promise<[number, User?]> {
-    await withTransaction(async (conn) => {
-      await conn.execute('UPDATE comment SET body = NULL, author_id = NULL WHERE author_id = ?', [userId]);
-      await conn.execute('UPDATE item SET author_id = NULL WHERE author_id = ?', [userId]);
-      await conn.execute('UPDATE item SET last_updated_by = NULL WHERE last_updated_by = ?', [userId]);
-      await conn.execute('UPDATE universe SET author_id = NULL WHERE author_id = ?', [userId]);
+    await withTransaction(async (trx) => {
+      await trx.updateTable('comment').set({ body: null, author_id: null }).where('author_id', '=', userId).execute();
+      await trx.updateTable('item').set({ author_id: null }).where('author_id', '=', userId).execute();
+      await trx.updateTable('item').set({ last_updated_by: null }).where('last_updated_by', '=', userId).execute();
+      await trx.updateTable('universe').set({ author_id: null }).where('author_id', '=', userId).execute();
 
-      // Promote highest-ranking user of abandoned universes with at least one other admin
-      await conn.execute(`
+      // Kysely doesn't support UPDATE-with-JOIN either
+      await sql`
         UPDATE authoruniverse
         INNER JOIN (
           SELECT MIN(au1.id) AS id
@@ -442,26 +423,28 @@ export class UserAPI {
             SELECT universe_id, MAX(permission_level) AS max_perm
             FROM authoruniverse
             WHERE universe_id IN (
-              SELECT universe_id FROM authoruniverse WHERE user_id = ?
-            ) AND user_id != ? AND permission_level >= ?
+              SELECT universe_id FROM authoruniverse WHERE user_id = ${userId}
+            ) AND user_id != ${userId} AND permission_level >= ${perms.ADMIN}
             GROUP BY universe_id
           ) au2 ON au1.universe_id = au2.universe_id AND au1.permission_level = au2.max_perm
-          WHERE au1.permission_level < ?
+          WHERE au1.permission_level < ${perms.OWNER}
           GROUP BY au1.universe_id
         ) AS to_promote ON authoruniverse.id = to_promote.id
-        SET authoruniverse.permission_level = ?
-      `, [userId, userId, perms.ADMIN, perms.OWNER, perms.OWNER]);
+        SET authoruniverse.permission_level = ${perms.OWNER}
+      `.execute(trx);
 
-      await conn.execute('DELETE FROM session WHERE user_id = ?', [userId]);
-      await conn.execute('DELETE FROM user WHERE id = ?', [userId]);
+      await trx.deleteFrom('session').where('user_id', '=', userId).execute();
+      await trx.deleteFrom('user').where('id', '=', userId).execute();
 
       // Delete orphaned universes (universes with no other owner or admin)
-      await conn.execute(`
-        DELETE FROM universe
-        WHERE id NOT IN (
-          SELECT DISTINCT universe_id FROM authoruniverse WHERE permission_level >= ?
-        )
-      `, [perms.ADMIN]);
+      await trx
+        .deleteFrom('universe')
+        .where('id', 'not in', (eb) => eb
+          .selectFrom('authoruniverse')
+          .select('universe_id')
+          .distinct()
+          .where('permission_level', '>=', perms.ADMIN))
+        .execute();
     });
     return [200];
   }
@@ -477,7 +460,7 @@ export class UserAPI {
       if (!isCorrectLogin) {
         throw new ForbiddenError('Password incorrect!');
       }
-      await executeQuery('INSERT INTO userdeleterequest (user_id) VALUES (?);', [user.id]);
+      await kysely.insertInto('userdeleterequest').values({ user_id: user.id }).execute();
       await this.api.email.sendTemplateEmail(this.api.email.templates.DELETE, SITE_OWNER_EMAIL, { username });
       return;
     } else {
@@ -488,10 +471,11 @@ export class UserAPI {
   async getDeleteRequest(user) {
     if (!user) return [401];
 
-    const request = (await executeQuery(
-      'SELECT * FROM userdeleterequest WHERE user_id = ?',
-      [user.id],
-    ))[0];
+    const request = await kysely
+      .selectFrom('userdeleterequest')
+      .selectAll()
+      .where('user_id', '=', user.id)
+      .executeTakeFirst();
     if (!request) return [404];
 
     return [200, request];
@@ -500,17 +484,21 @@ export class UserAPI {
   async prepareVerification(userId) {
     const verificationKey = utils.createRandom32String();
 
-    await executeQuery('INSERT INTO userverification (user_id, verification_key) VALUES (?, ?);', [userId, verificationKey]);
+    await kysely.insertInto('userverification').values({ user_id: userId, verification_key: verificationKey }).execute();
 
     return verificationKey;
   }
 
   async verifyUser(verificationKey: string): Promise<number> {
-    const records = await executeQuery('SELECT user_id FROM userverification WHERE verification_key = ?;', [verificationKey]);
-    if (records.length === 0) throw new NotFoundError('No such verification key');
-    const user = await this.getOne({ id: records[0].user_id });
+    const record = await kysely
+      .selectFrom('userverification')
+      .select('user_id')
+      .where('verification_key', '=', verificationKey)
+      .executeTakeFirst();
+    if (!record) throw new NotFoundError('No such verification key');
+    const user = await this.getOne({ id: record.user_id });
     await this.put(user.id, user.id, { verified: true });
-    await executeQuery('DELETE FROM userverification WHERE user_id = ?;', [user.id]);
+    await kysely.deleteFrom('userverification').where('user_id', '=', user.id).execute();
 
     logger.info(`User ${user.username} (${user.email}) verified!`);
 
@@ -522,22 +510,30 @@ export class UserAPI {
 
     const now = new Date();
     const expiresIn = 7 * 24 * 60 * 60 * 1000;
-    await executeQuery('INSERT INTO userpasswordreset (user_id, reset_key, expires_at) VALUES (?, ?, ?);', [userId, resetKey, new Date(now.getTime() + expiresIn)]);
+    await kysely
+      .insertInto('userpasswordreset')
+      .values({ user_id: userId, reset_key: resetKey, expires_at: new Date(now.getTime() + expiresIn) })
+      .execute();
 
     return resetKey;
   }
 
   async resetPassword(resetKey: string, newPassword: string): Promise<number> {
-    const records = await executeQuery('SELECT user_id FROM userpasswordreset WHERE reset_key = ? AND expires_at > NOW();', [resetKey]);
-    if (records.length === 0) throw new NotFoundError();
-    const user = await this.getOne({ id: records[0].user_id });
+    const record = await kysely
+      .selectFrom('userpasswordreset')
+      .select('user_id')
+      .where('reset_key', '=', resetKey)
+      .where('expires_at', '>', sql<Date>`NOW()`)
+      .executeTakeFirst();
+    if (!record) throw new NotFoundError();
+    const user = await this.getOne({ id: record.user_id });
 
     const salt = utils.createRandom32String();
     const newHashedPass = utils.createHash(newPassword, salt);
-    await withTransaction(async (conn) => {
-      await conn.execute('UPDATE user SET salt = ?, password = ? WHERE id = ?;', [salt, newHashedPass, user.id]);
-      await conn.execute('DELETE FROM session WHERE user_id = ?;', [user.id]);
-      await conn.execute('DELETE FROM userpasswordreset WHERE user_id = ?;', [user.id]);
+    await withTransaction(async (trx) => {
+      await trx.updateTable('user').set({ salt, password: newHashedPass }).where('id', '=', user.id).execute();
+      await trx.deleteFrom('session').where('user_id', '=', user.id).execute();
+      await trx.deleteFrom('userpasswordreset').where('user_id', '=', user.id).execute();
     });
 
     logger.info(`Reset password for user ${user.username}.`);

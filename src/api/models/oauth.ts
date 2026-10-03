@@ -1,5 +1,6 @@
 import { API } from '..';
-import { executeQuery } from '../utils';
+import { kysely } from '../../db/kysely';
+import { sql } from 'kysely';
 import utils from '../../lib/hashUtils';
 import { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 
@@ -88,8 +89,11 @@ export class OAuthAPI {
   }
 
   async getClient(clientId: string): Promise<OAuthClient | undefined> {
-    const rows = await executeQuery('SELECT * FROM oauth_client WHERE client_id = ?', [clientId]) as OAuthClientRow[];
-    const row = rows[0];
+    const row = await kysely
+      .selectFrom('oauth_client')
+      .selectAll()
+      .where('client_id', '=', clientId)
+      .executeTakeFirst() as OAuthClientRow | undefined;
     return row ? rowToClient(row) : undefined;
   }
 
@@ -99,25 +103,22 @@ export class OAuthAPI {
       redirect_uris, token_endpoint_auth_method, grant_types, response_types, scope,
       ...metadata
     } = client;
-    await executeQuery(
-      `INSERT INTO oauth_client (
-        client_id, client_secret, client_secret_expires_at, client_name,
-        redirect_uris, token_endpoint_auth_method, grant_types, response_types, scope, metadata, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+    await kysely
+      .insertInto('oauth_client')
+      .values({
         client_id,
-        client_secret ?? null,
-        client_secret_expires_at ?? null,
-        client_name ?? null,
-        JSON.stringify(redirect_uris),
-        token_endpoint_auth_method ?? null,
-        grant_types ? JSON.stringify(grant_types) : null,
-        response_types ? JSON.stringify(response_types) : null,
-        scope ?? null,
-        Object.keys(metadata).length ? JSON.stringify(metadata) : null,
-        new Date(),
-      ],
-    );
+        client_secret: client_secret ?? null,
+        client_secret_expires_at: client_secret_expires_at ?? null,
+        client_name: client_name ?? null,
+        redirect_uris: JSON.stringify(redirect_uris),
+        token_endpoint_auth_method: token_endpoint_auth_method ?? null,
+        grant_types: grant_types ? JSON.stringify(grant_types) : null,
+        response_types: response_types ? JSON.stringify(response_types) : null,
+        scope: scope ?? null,
+        metadata: Object.keys(metadata).length ? JSON.stringify(metadata) : null,
+        created_at: new Date(),
+      })
+      .execute();
     return client;
   }
 
@@ -127,24 +128,26 @@ export class OAuthAPI {
     params: { redirectUri: string, codeChallenge: string, scopes?: string[], resource?: URL },
   ): Promise<string> {
     const code = newToken();
-    await executeQuery(
-      `INSERT INTO oauth_authorization_code
-        (code, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        code, clientId, userId, params.redirectUri, params.codeChallenge,
-        params.scopes?.length ? params.scopes.join(' ') : null,
-        params.resource?.href ?? null,
-        new Date(Date.now() + AUTH_CODE_TTL_MS),
-        new Date(),
-      ],
-    );
+    await kysely
+      .insertInto('oauth_authorization_code')
+      .values({
+        code, client_id: clientId, user_id: userId,
+        redirect_uri: params.redirectUri, code_challenge: params.codeChallenge,
+        scope: params.scopes?.length ? params.scopes.join(' ') : null,
+        resource: params.resource?.href ?? null,
+        expires_at: new Date(Date.now() + AUTH_CODE_TTL_MS),
+        created_at: new Date(),
+      })
+      .execute();
     return code;
   }
 
   async getAuthorizationCode(code: string): Promise<AuthorizationCode | undefined> {
-    const rows = await executeQuery('SELECT * FROM oauth_authorization_code WHERE code = ?', [code]) as AuthorizationCode[];
-    const row = rows[0];
+    const row = await kysely
+      .selectFrom('oauth_authorization_code')
+      .selectAll()
+      .where('code', '=', code)
+      .executeTakeFirst();
     if (!row || row.expires_at.getTime() < Date.now()) return undefined;
     return row;
   }
@@ -152,54 +155,66 @@ export class OAuthAPI {
   async consumeAuthorizationCode(code: string): Promise<AuthorizationCode | undefined> {
     const authCode = await this.getAuthorizationCode(code);
     if (!authCode) return undefined;
-    await executeQuery('DELETE FROM oauth_authorization_code WHERE code = ?', [code]);
+    await kysely.deleteFrom('oauth_authorization_code').where('code', '=', code).execute();
     return authCode;
   }
 
   async createAccessToken(userId: number, clientId: string, scope: string | null, resource?: URL): Promise<{ token: string, expiresAt: Date }> {
     const token = newToken();
     const expiresAt = new Date(Date.now() + ACCESS_TOKEN_TTL_MS);
-    await executeQuery(
-      `INSERT INTO oauth_access_token (token, client_id, user_id, scope, resource, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [token, clientId, userId, scope, resource?.href ?? null, expiresAt, new Date()],
-    );
+    await kysely
+      .insertInto('oauth_access_token')
+      .values({
+        token, client_id: clientId, user_id: userId, scope,
+        resource: resource?.href ?? null, expires_at: expiresAt, created_at: new Date(),
+      })
+      .execute();
     return { token, expiresAt };
   }
 
   async getAccessToken(token: string): Promise<AccessToken | undefined> {
-    const rows = await executeQuery('SELECT * FROM oauth_access_token WHERE token = ?', [token]) as AccessToken[];
-    const row = rows[0];
+    const row = await kysely
+      .selectFrom('oauth_access_token')
+      .selectAll()
+      .where('token', '=', token)
+      .executeTakeFirst();
     if (!row || row.expires_at.getTime() < Date.now()) return undefined;
     return row;
   }
 
   async revokeAccessToken(token: string): Promise<void> {
-    await executeQuery('DELETE FROM oauth_access_token WHERE token = ?', [token]);
+    await kysely.deleteFrom('oauth_access_token').where('token', '=', token).execute();
   }
 
   async createRefreshToken(userId: number, clientId: string, scope: string | null): Promise<string> {
     const token = newToken();
-    await executeQuery(
-      `INSERT INTO oauth_refresh_token (token, client_id, user_id, scope, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      [token, clientId, userId, scope, new Date(Date.now() + REFRESH_TOKEN_TTL_MS), new Date()],
-    );
+    await kysely
+      .insertInto('oauth_refresh_token')
+      .values({
+        token, client_id: clientId, user_id: userId, scope,
+        expires_at: new Date(Date.now() + REFRESH_TOKEN_TTL_MS), created_at: new Date(),
+      })
+      .execute();
     return token;
   }
 
   async getRefreshToken(token: string): Promise<RefreshToken | undefined> {
-    const rows = await executeQuery('SELECT * FROM oauth_refresh_token WHERE token = ?', [token]) as RefreshToken[];
-    const row = rows[0];
+    const row = await kysely
+      .selectFrom('oauth_refresh_token')
+      .selectAll()
+      .where('token', '=', token)
+      .executeTakeFirst();
     if (!row || row.expires_at.getTime() < Date.now()) return undefined;
     return row;
   }
 
   async revokeRefreshToken(token: string): Promise<void> {
-    await executeQuery('DELETE FROM oauth_refresh_token WHERE token = ?', [token]);
+    await kysely.deleteFrom('oauth_refresh_token').where('token', '=', token).execute();
   }
 
   async purge(): Promise<void> {
-    await executeQuery('DELETE FROM oauth_authorization_code WHERE expires_at < NOW()');
-    await executeQuery('DELETE FROM oauth_access_token WHERE expires_at < NOW()');
-    await executeQuery('DELETE FROM oauth_refresh_token WHERE expires_at < NOW()');
+    await kysely.deleteFrom('oauth_authorization_code').where('expires_at', '<', sql<Date>`NOW()`).execute();
+    await kysely.deleteFrom('oauth_access_token').where('expires_at', '<', sql<Date>`NOW()`).execute();
+    await kysely.deleteFrom('oauth_refresh_token').where('expires_at', '<', sql<Date>`NOW()`).execute();
   }
 }

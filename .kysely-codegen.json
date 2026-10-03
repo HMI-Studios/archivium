@@ -1,0 +1,38 @@
+{
+  "dialect": "mysql",
+  "outFile": "src/db/schema-types.ts",
+  "logLevel": "warn",
+  "customImports": {
+    "UniverseObjData": "../api/models/universe#UniverseObjData",
+    "ObjData": "../api/models/item#ObjData",
+    "perms": "../lib/perms#perms"
+  },
+  "overrides": {
+    "columns": {
+      "universe.obj_data": "ColumnType<UniverseObjData, string, string>",
+      "universeaccessrequest.permission_level": "perms",
+      "item.obj_data": "ColumnType<ObjData, string, string>",
+      "user.verified": "Generated<boolean | null>",
+      "user.suspect": "Generated<boolean | null>",
+      "user.email_notifications": "Generated<boolean | null>",
+      "contact.accepted": "boolean | null",
+      "universe.is_public": "boolean",
+      "universe.discussion_enabled": "boolean",
+      "universe.discussion_open": "boolean",
+      "universe.mcp_items_enabled": "Generated<boolean>",
+      "universe.mcp_notes_enabled": "Generated<boolean>",
+      "universe.mcp_discussions_enabled": "Generated<boolean>",
+      "threadnotification.is_enabled": "boolean",
+      "note.is_public": "boolean | null",
+      "noteboard.is_public": "boolean | null",
+      "story.drafts_public": "boolean",
+      "storychapter.is_published": "Generated<boolean>",
+      "itemnotification.is_enabled": "boolean",
+      "universeaccessrequest.is_invite": "Generated<boolean>",
+      "followeruniverse.is_following": "boolean",
+      "universenotification.is_enabled": "boolean",
+      "notificationtype.is_enabled": "boolean",
+      "sentnotification.is_read": "Generated<boolean | null>"
+    }
+  }
+}
