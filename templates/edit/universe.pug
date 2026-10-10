@@ -16,7 +16,6 @@ block breadcrumbs
   span #{T('Edit')}
 
 block append styles
-  link(rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css")
   style.
     #cats td:not(:first-child) {
       padding: 0.125rem 0;
@@ -45,7 +44,6 @@ block append save
     a.navbarBtnLink.navbarText(onclick='document.forms.edit.requestSubmit()') #{T('Save Changes')}
 
 block content
-  script(src="https://unpkg.com/easymde/dist/easymde.min.js")
   script
     include /static/scripts/domUtils.js
     include /static/scripts/universes.js

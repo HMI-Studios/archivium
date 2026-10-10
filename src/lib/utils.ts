@@ -11,3 +11,9 @@ export function deepCompare(a: any, b: any): boolean {
   }
   return true;
 }
+
+export function splitIgnoringQuotes(str) {
+  const regex = /(?:[^\s"']+|"[^"]*"|'[^']*')+/g;
+  const matches = str.match(regex);
+  return matches ? matches.map(match => match.replace(/^["']|["']$/g, '')) : [];
+}

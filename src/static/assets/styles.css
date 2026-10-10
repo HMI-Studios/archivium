@@ -808,21 +808,6 @@ button:disabled, .button-link:disabled {
     box-shadow: var(--button-border-color) 0 0 0.5rem;
 }
 
-/* TODO: These styles are not great, but will do for now as we intend to drop support for EasyMDE */
-.EasyMDEContainer .CodeMirror {
-  color: var(--text-color);
-  border-color: var(--button-border-color) !important;
-  background-color: var(--sheet-color) !important;
-}
-
-.EasyMDEContainer .CodeMirror .CodeMirror-cursor {
-  border-color: var(--text-color);
-}
-
-.EasyMDEContainer .editor-toolbar {
-  border-color: var(--button-border-color) !important;
-}
-
 .editor {
   display: grid;
   margin: 0.75rem 0;
@@ -1114,22 +1099,6 @@ button:disabled, .button-link:disabled {
 
 .tiptap > p:last-child:has(> br:only-child) {
   display: none; /* Hide empty trailing paragraph */
-}
-
-/* EasyMDE styles */
-.EasyMDEContainer {
-  position: relative;
-}
-
-.editor-toolbar:not(.fullscreen) {
-  position: sticky !important;
-  top: 47px;
-  z-index: 2;
-  background-color: var(--page-color);
-}
-
-.editor-preview-side:not(.fullscreen) {
-  z-index: 1 !important;
 }
 
 /* Story styles */

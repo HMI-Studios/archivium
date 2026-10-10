@@ -83,7 +83,9 @@ function compile(file) {
 logger.info('Compiling templates...');
 const templates = {
   error: compile('templates/error.pug'),
-  docs: compile('templates/displayMd.pug'),
+  privacyPolicy: compile('templates/docs/privacyPolicy.pug'),
+  termsOfService: compile('templates/docs/termsOfService.pug'),
+  codeOfConduct: compile('templates/docs/codeOfConduct.pug'),
   home: compile('templates/home.pug'),
   login: compile('templates/login.pug'),
   signup: compile('templates/signup.pug'),

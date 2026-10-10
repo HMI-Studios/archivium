@@ -17,7 +17,7 @@ import {
   missingDefaultTabs,
   tabTypesOf,
 } from '../../../src/lib/itemTypeConfig';
-import { splitIgnoringQuotes } from '../../../src/lib/markdown';
+import { splitIgnoringQuotes } from '../../../src/lib/utils';
 import { perms } from '../../../src/lib/perms';
 import { type TabLayout } from '../../../src/lib/tabLayout';
 import { indexedToJson, jsonToIndexed } from '../../../src/lib/tiptapHelpers';

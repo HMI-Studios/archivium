@@ -4,7 +4,6 @@ block title
   title #{item.title}
 
 block append styles
-  link(rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css")
   style.
     #links-display {
       visibility: hidden;
@@ -12,7 +11,6 @@ block append styles
     }
 
 block scripts
-  script(src="https://unpkg.com/easymde/dist/easymde.min.js")
   script
     include /static/scripts/tabs.js
     include /static/scripts/domUtils.js
@@ -21,11 +19,9 @@ block scripts
     include /static/scripts/markdown/render.js
     include /static/scripts/modal.js
     include /static/scripts/searchableSelect.js
-    include /static/scripts/editor/markdown.js
     include /static/scripts/calendarPicker.js
     include /static/scripts/timelineRender.js
     include /static/scripts/cardUtils.js
-    include /static/scripts/easyMDE.js
 
 block breadcrumbs
   -

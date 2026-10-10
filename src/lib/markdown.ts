@@ -1,3 +1,5 @@
+import { splitIgnoringQuotes } from './utils';
+
 export interface NodeAttributes {
   class?: string,
   href?: string,
@@ -322,12 +324,6 @@ function parseInline(line: Line) {
   if (chunk) nodes.push(new MarkdownNode('text', chunk));
 
   return nodes;
-}
-
-export function splitIgnoringQuotes(str) {
-  const regex = /(?:[^\s"']+|"[^"]*"|'[^']*')+/g;
-  const matches = str.match(regex);
-  return matches ? matches.map(match => match.replace(/^["']|["']$/g, '')) : [];
 }
 
 export function parseMarkdown(text) {

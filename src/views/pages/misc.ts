@@ -19,16 +19,13 @@ async function findEditorChunk(prefix: string): Promise<string | null> {
 export default {
   /* Terms and Agreements */
   async privacyPolicy(_, res) {
-    const content = (await fs.readFile(path.join(staticDir, 'privacy_policy.md'))).toString();
-    res.prepareRender('docs', { content });
+    res.prepareRender('privacyPolicy');
   },
   async termsOfService(_, res) {
-    const content = (await fs.readFile(path.join(staticDir, 'ToS.md'))).toString();
-    res.prepareRender('docs', { content });
+    res.prepareRender('termsOfService');
   },
   async codeOfConduct(_, res) {
-    const content = (await fs.readFile(path.join(staticDir, 'code_of_conduct.md'))).toString();
-    res.prepareRender('docs', { content });
+    res.prepareRender('codeOfConduct');
   },
 
   /* Home Page */
