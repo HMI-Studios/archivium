@@ -49,12 +49,14 @@ export default {
       typeSettings[`${setting.notif_type}_${setting.notif_method}`] = Boolean(setting.is_enabled);
     }
     const [, deleteRequest] = await api.user.getDeleteRequest(user);
-    const connectedApps = await api.oauth.getGrants(user.id);
-    const grantable = connectedApps.length > 0 ? await grantableUniverses(user) : [];
+    const grants = await api.oauth.getGrants(user.id);
     res.prepareRender('settings', {
       user,
-      connectedApps,
-      grantableUniverses: grantable,
+      connectedApps: grants.filter((g) => !g.token),
+      accessTokens: grants.filter((g) => g.token),
+      grantableUniverses: await grantableUniverses(user),
+      newToken: null,
+      tokenError: null,
       typeSettings,
       deleteRequest,
       notificationTypes: api.notification.types,

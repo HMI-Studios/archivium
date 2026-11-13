@@ -347,6 +347,37 @@ block content
           });
 
     .itemTab.hidden.flex-col(data-tab='connected-apps')
+      mixin grantTable(granted)
+        if grantableUniverses.length === 0
+          p
+            small #{T('Read-only. None of your universes currently allow edits through MCP.')}
+        else
+          table.sheet.mt-2
+            thead
+              tr
+                th #{T('Universe')}
+                th #{T('Create & edit items')}
+                th #{T('Create & edit my notes')}
+            tbody
+              each u in grantableUniverses
+                tr
+                  td #{u.title}
+                  td.center
+                    if u.items
+                      input(type='checkbox' name=`items_write_${u.id}` aria-label=`${T('Create & edit items')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].items_write))
+                  td.center
+                    if u.notes
+                      input(type='checkbox' name=`notes_write_${u.id}` aria-label=`${T('Create & edit my notes')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].notes_write))
+
+      mixin grantForm(grant, revokeConfirm, revokeLabel)
+        form(method='POST' action=`/settings/connected-apps/${encodeURIComponent(grant.client_id)}`)
+          +grantTable(Object.fromEntries(grant.universes.map((u) => [u.universe_id, u])))
+          .d-flex.gap-2.mt-2
+            if grantableUniverses.length > 0
+              button(type='submit') #{T('Save Permissions')}
+            button(type='submit' formaction=`/settings/connected-apps/${encodeURIComponent(grant.client_id)}/revoke` onclick=`return confirm(${JSON.stringify(revokeConfirm)})`) #{revokeLabel}
+
+      h2 #{T('Connected Apps')}
       p
         small #{T('Applications you have connected to your account through Archivium\'s MCP connector. They can read universes where MCP access is enabled, and edit only where you allow it below.')}
       if connectedApps.length === 0
@@ -356,29 +387,52 @@ block content
         .mb-4
           h3.mb-1 #{app.client_name || app.client_id}
           small #{T('Connected %s', formatDate(app.created_at, true))}
-          form(method='POST' action=`/settings/connected-apps/${encodeURIComponent(app.client_id)}`)
-            if grantableUniverses.length === 0
-              p
-                small #{T('Read-only. None of your universes currently allow edits through MCP.')}
-            else
-              - const granted = Object.fromEntries(app.universes.map((u) => [u.universe_id, u]))
-              table.sheet.mt-2
-                thead
-                  tr
-                    th #{T('Universe')}
-                    th #{T('Create & edit items')}
-                    th #{T('Create & edit my notes')}
-                tbody
-                  each u in grantableUniverses
-                    tr
-                      td #{u.title}
-                      td.center
-                        if u.items
-                          input(type='checkbox' name=`items_write_${u.id}` aria-label=`${T('Create & edit items')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].items_write))
-                      td.center
-                        if u.notes
-                          input(type='checkbox' name=`notes_write_${u.id}` aria-label=`${T('Create & edit my notes')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].notes_write))
-            .d-flex.gap-2.mt-2
-              if grantableUniverses.length > 0
-                button(type='submit') #{T('Save Permissions')}
-              button(type='submit' formaction=`/settings/connected-apps/${encodeURIComponent(app.client_id)}/revoke` onclick=`return confirm(${JSON.stringify(T('Disconnect this application? It will lose all access immediately.'))})`) #{T('Disconnect')}
+          +grantForm(app, T('Disconnect this application? It will lose all access immediately.'), T('Disconnect'))
+
+      hr.mt-4
+
+      h2#access-tokens #{T('Personal Access Tokens')}
+      p
+        small #{T('For bots, scripts and CI: send a token as a Bearer token to the MCP endpoint at /mcp. It acts as you, limited to the write access you choose here.')}
+
+      if newToken
+        .mb-4#new-access-token
+          h3.mb-1 #{T('Token "%s" created', newToken.name)}
+          p
+            b #{T('Copy it now. You won\'t be able to see it again.')}
+          .d-flex.gap-2
+            input#new-token-value(type='text' readonly value=newToken.token aria-label=T('New access token') style={ 'flex-grow': 1, 'font-family': 'monospace' })
+            button(type='button' onclick="navigator.clipboard.writeText(document.getElementById('new-token-value').value); this.innerText = T('Copied')") #{T('Copy')}
+
+      each tok in accessTokens
+        - const expired = tok.token.expires_at && new Date(tok.token.expires_at) < new Date()
+        .mb-4(data-access-token=tok.client_name)
+          h3.mb-1 #{tok.client_name}
+            if expired
+              |
+              small.color-error (#{T('expired')})
+          small
+            code #{`arch_pat_…${tok.token.token_hint}`}
+            |  · #{T('Created %s', formatDate(tok.created_at, true))}
+            |  · #{tok.token.expires_at ? T('Expires %s', formatDate(tok.token.expires_at, true)) : T('Never expires')}
+            |  · #{tok.token.last_used_at ? T('Last used %s', formatDate(tok.token.last_used_at, true)) : T('Never used')}
+          +grantForm(tok, T('Revoke this token? Anything using it will lose access immediately.'), T('Revoke'))
+
+      h3 #{T('Create a token')}
+      if tokenError
+        p.color-error #{T(tokenError)}
+      form#createAccessToken(method='POST' action='/settings/access-tokens?tab=connected-apps')
+        .inputGroup
+          label(for='access-token-name') #{T('Name')}:
+          input#access-token-name(type='text' name='name' maxlength=64 required placeholder=T('e.g. Lore bot'))
+        .inputGroup
+          label(for='access-token-expiry') #{T('Expires')}:
+          select#access-token-expiry(name='expiry')
+            option(value='7') #{T('In 7 days')}
+            option(value='30') #{T('In 30 days')}
+            option(value='90' selected) #{T('In 90 days')}
+            option(value='365') #{T('In 1 year')}
+            option(value='never') #{T('Never')}
+        +grantTable({})
+        .d-flex.mt-2
+          button(type='submit') #{T('Create Token')}
