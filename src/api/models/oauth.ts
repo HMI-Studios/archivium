@@ -2,6 +2,8 @@ import { API } from '..';
 import { kysely } from '../../db/kysely';
 import { sql } from 'kysely';
 import * as utils from '../../lib/hashUtils';
+import crypto from 'crypto';
+import { Trx } from '../../db/kysely';
 import { withTransaction } from '../utils';
 import { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 
@@ -67,6 +69,13 @@ export type GrantUniverse = {
   notes_write: boolean,
 };
 
+export type PersonalAccessTokenInfo = {
+  id: number,
+  token_hint: string,
+  expires_at: Date | null,
+  last_used_at: Date | null,
+};
+
 export type Grant = {
   user_id: number,
   client_id: string,
@@ -74,7 +83,20 @@ export type Grant = {
   created_at: Date,
   updated_at: Date,
   universes: GrantUniverse[],
+  token: PersonalAccessTokenInfo | null,
 };
+
+export const PAT_PREFIX = 'arch_pat_';
+const PAT_CLIENT_PREFIX = 'pat_';
+export const MAX_PERSONAL_ACCESS_TOKENS = 25;
+
+export function isPersonalAccessTokenClient(clientId: string): boolean {
+  return clientId.startsWith(PAT_CLIENT_PREFIX);
+}
+
+function hashToken(token: string): string {
+  return utils.createHash(token);
+}
 
 export type GrantUniverseInput = { universe_id: number, items_write: boolean, notes_write: boolean };
 
@@ -236,9 +258,11 @@ export class OAuthAPI {
     const grants = await kysely
       .selectFrom('oauth_grant')
       .innerJoin('oauth_client', 'oauth_client.client_id', 'oauth_grant.client_id')
+      .leftJoin('personal_access_token as pat', 'pat.client_id', 'oauth_grant.client_id')
       .select([
         'oauth_grant.user_id', 'oauth_grant.client_id', 'oauth_client.client_name',
         'oauth_grant.created_at', 'oauth_grant.updated_at',
+        'pat.id as pat_id', 'pat.token_hint', 'pat.expires_at', 'pat.last_used_at',
       ])
       .where('oauth_grant.user_id', '=', userId)
       .$if(clientId !== undefined, (qb) => qb.where('oauth_grant.client_id', '=', clientId!))
@@ -259,8 +283,11 @@ export class OAuthAPI {
       .orderBy('universe.title')
       .execute();
 
-    return grants.map((grant) => ({
+    return grants.map(({ pat_id, token_hint, expires_at, last_used_at, ...grant }) => ({
       ...grant,
+      token: pat_id !== null && token_hint !== null
+        ? { id: pat_id, token_hint, expires_at, last_used_at }
+        : null,
       universes: universeRows
         .filter((row) => row.client_id === grant.client_id)
         .map(({ client_id: _clientId, ...row }) => ({
@@ -276,6 +303,10 @@ export class OAuthAPI {
   }
 
   async putGrant(userId: number, clientId: string, universes: GrantUniverseInput[]): Promise<void> {
+    await withTransaction((trx) => this.writeGrant(trx, userId, clientId, universes));
+  }
+
+  private async writeGrant(trx: Trx, userId: number, clientId: string, universes: GrantUniverseInput[]): Promise<void> {
     const rows = universes
       .filter((u) => u.items_write || u.notes_write)
       .map((u) => ({
@@ -285,30 +316,106 @@ export class OAuthAPI {
         items_write: u.items_write,
         notes_write: u.notes_write,
       }));
-    await withTransaction(async (trx) => {
-      const now = new Date();
-      await trx
-        .insertInto('oauth_grant')
-        .values({ user_id: userId, client_id: clientId, created_at: now, updated_at: now })
-        .onDuplicateKeyUpdate({ updated_at: now })
-        .execute();
-      await trx
-        .deleteFrom('oauth_grant_universe')
-        .where('user_id', '=', userId)
-        .where('client_id', '=', clientId)
-        .execute();
-      if (rows.length > 0) {
-        await trx.insertInto('oauth_grant_universe').values(rows).execute();
-      }
-    });
+    const now = new Date();
+    await trx
+      .insertInto('oauth_grant')
+      .values({ user_id: userId, client_id: clientId, created_at: now, updated_at: now })
+      .onDuplicateKeyUpdate({ updated_at: now })
+      .execute();
+    await trx
+      .deleteFrom('oauth_grant_universe')
+      .where('user_id', '=', userId)
+      .where('client_id', '=', clientId)
+      .execute();
+    if (rows.length > 0) {
+      await trx.insertInto('oauth_grant_universe').values(rows).execute();
+    }
   }
 
   async revokeGrant(userId: number, clientId: string): Promise<void> {
+    if (isPersonalAccessTokenClient(clientId)) {
+      const owned = await kysely
+        .selectFrom('personal_access_token')
+        .select('id')
+        .where('client_id', '=', clientId)
+        .where('user_id', '=', userId)
+        .executeTakeFirst();
+      if (owned) await kysely.deleteFrom('oauth_client').where('client_id', '=', clientId).execute();
+      return;
+    }
     await withTransaction(async (trx) => {
       for (const table of ['oauth_access_token', 'oauth_refresh_token', 'oauth_authorization_code', 'oauth_grant'] as const) {
         await trx.deleteFrom(table).where('user_id', '=', userId).where('client_id', '=', clientId).execute();
       }
     });
+  }
+
+  async countPersonalAccessTokens(userId: number): Promise<number> {
+    const row = await kysely
+      .selectFrom('personal_access_token')
+      .select((eb) => eb.fn.countAll<number>().as('n'))
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+    return Number(row?.n ?? 0);
+  }
+
+  async createPersonalAccessToken(
+    userId: number,
+    name: string,
+    expiresAt: Date | null,
+    universes: GrantUniverseInput[],
+  ): Promise<string> {
+    const token = `${PAT_PREFIX}${crypto.randomBytes(32).toString('base64url')}`;
+    const clientId = `${PAT_CLIENT_PREFIX}${crypto.randomUUID()}`;
+    const now = new Date();
+    await withTransaction(async (trx) => {
+      await trx
+        .insertInto('oauth_client')
+        .values({
+          client_id: clientId,
+          client_secret: null,
+          client_secret_expires_at: null,
+          client_name: name,
+          redirect_uris: JSON.stringify([]),
+          token_endpoint_auth_method: 'none',
+          grant_types: JSON.stringify([]),
+          response_types: JSON.stringify([]),
+          scope: null,
+          metadata: JSON.stringify({ personal_access_token: true }),
+          created_at: now,
+        })
+        .execute();
+      await trx
+        .insertInto('personal_access_token')
+        .values({
+          user_id: userId,
+          client_id: clientId,
+          name,
+          token_hash: hashToken(token),
+          token_hint: token.slice(-4),
+          expires_at: expiresAt,
+          last_used_at: null,
+          created_at: now,
+        })
+        .execute();
+      await this.writeGrant(trx, userId, clientId, universes);
+    });
+    return token;
+  }
+
+  async verifyPersonalAccessToken(token: string): Promise<{ user_id: number, client_id: string, expires_at: Date | null } | undefined> {
+    const row = await kysely
+      .selectFrom('personal_access_token')
+      .select(['id', 'user_id', 'client_id', 'expires_at', 'last_used_at'])
+      .where('token_hash', '=', hashToken(token))
+      .executeTakeFirst();
+    if (!row) return undefined;
+    if (row.expires_at && row.expires_at.getTime() < Date.now()) return undefined;
+    // Avoid a write on every request; minute resolution is plenty for "last used".
+    if (!row.last_used_at || Date.now() - row.last_used_at.getTime() > 60 * 1000) {
+      await kysely.updateTable('personal_access_token').set({ last_used_at: new Date() }).where('id', '=', row.id).execute();
+    }
+    return { user_id: row.user_id, client_id: row.client_id, expires_at: row.expires_at };
   }
 
   async purge(): Promise<void> {

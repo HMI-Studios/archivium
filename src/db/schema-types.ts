@@ -261,6 +261,18 @@ export interface OauthRefreshToken {
   user_id: number;
 }
 
+export interface PersonalAccessToken {
+  client_id: string;
+  created_at: Date;
+  expires_at: Date | null;
+  id: Generated<number>;
+  last_used_at: Date | null;
+  name: string;
+  token_hash: string;
+  token_hint: string;
+  user_id: number;
+}
+
 export interface SchemaVersion {
   comment: string;
   time: Date | null;
@@ -488,6 +500,7 @@ export interface DB {
   oauth_grant: OauthGrant;
   oauth_grant_universe: OauthGrantUniverse;
   oauth_refresh_token: OauthRefreshToken;
+  personal_access_token: PersonalAccessToken;
   schema_version: SchemaVersion;
   sentemail: Sentemail;
   sentnotification: Sentnotification;

@@ -5,12 +5,14 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { AccessDeniedError, InvalidGrantError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { OAuthClientInformationFull, OAuthTokenRevocationRequest, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import api from '../api';
+import { PAT_PREFIX, isPersonalAccessTokenClient } from '../api/models/oauth';
 import { render } from '../templates';
 import logger from '../logger';
 import { grantableUniverses, parseGrantForm } from './grants';
 
 class ArchiviumClientsStore implements OAuthRegisteredClientsStore {
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
+    if (isPersonalAccessTokenClient(clientId)) return undefined;
     return api.oauth.getClient(clientId) as Promise<OAuthClientInformationFull | undefined>;
   }
 
@@ -128,6 +130,19 @@ export class ArchiviumOAuthProvider implements OAuthServerProvider {
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
+    if (token.startsWith(PAT_PREFIX)) {
+      const pat = await api.oauth.verifyPersonalAccessToken(token);
+      if (!pat) throw new InvalidTokenError('Personal access token is invalid, expired or revoked.');
+      return {
+        token,
+        clientId: pat.client_id,
+        scopes: [],
+        // The SDK requires an expiry. Tokens are re-verified on every request, so a
+        // never-expiring token can just report a short rolling window.
+        expiresAt: Math.floor((pat.expires_at?.getTime() ?? Date.now() + 60 * 60 * 1000) / 1000),
+        extra: { userId: pat.user_id },
+      };
+    }
     const stored = await api.oauth.getAccessToken(token);
     if (!stored) {
       throw new InvalidTokenError('Access token is invalid or expired.');
