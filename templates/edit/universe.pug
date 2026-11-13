@@ -167,6 +167,8 @@ block content
       h3 #{T('MCP Access')}
       .mb-2
         small #{T('Allow LLM tools to read the selected parts of this universe through Archivium\'s MCP connector.')}
+        br
+        small #{T('Allowing edits only makes it possible: each user must still grant write access to their own LLM tools, and can only make the changes their own permissions allow.')}
 
       .inputGroup
         label(for='mcp_items_enabled') #{T('Expose items')}:
@@ -175,9 +177,21 @@ block content
           span.slider
 
       .inputGroup
+        label(for='mcp_items_write_enabled') #{T('Allow item edits')}:
+        label.switch
+          input#mcp_items_write_enabled(type='checkbox' name='mcp_items_write_enabled' checked=Boolean(universe.mcp_items_write_enabled))
+          span.slider
+
+      .inputGroup
         label(for='mcp_notes_enabled') #{T('Expose public notes')}:
         label.switch
           input#mcp_notes_enabled(type='checkbox' name='mcp_notes_enabled' checked=Boolean(universe.mcp_notes_enabled))
+          span.slider
+
+      .inputGroup
+        label(for='mcp_notes_write_enabled') #{T('Allow note edits')}:
+        label.switch
+          input#mcp_notes_write_enabled(type='checkbox' name='mcp_notes_write_enabled' checked=Boolean(universe.mcp_notes_write_enabled))
           span.slider
 
       .inputGroup

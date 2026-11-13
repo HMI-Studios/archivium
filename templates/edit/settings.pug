@@ -19,6 +19,8 @@ block content
       h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('account')`) #{T('Account')}
     li.navbarBtn(data-tab='notifications')
       h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('notifications')`) #{T('Notifications')}
+    li.navbarBtn(data-tab='connected-apps')
+      h3.navbarBtnLink.navbarText.ma-0(onclick=`showTab('connected-apps')`) #{T('Connected Apps')}
 
   .tabs
     .itemTab.hidden.flex-col(data-tab='account')
@@ -343,3 +345,40 @@ block content
           form.addEventListener('submit', async (e) => {
             form.querySelectorAll('#notificationFilters input').forEach(el => el.disabled = false);
           });
+
+    .itemTab.hidden.flex-col(data-tab='connected-apps')
+      p
+        small #{T('Applications you have connected to your account through Archivium\'s MCP connector. They can read universes where MCP access is enabled, and edit only where you allow it below.')}
+      if connectedApps.length === 0
+        p
+          i #{T('You have not connected any applications.')}
+      each app in connectedApps
+        .mb-4
+          h3.mb-1 #{app.client_name || app.client_id}
+          small #{T('Connected %s', formatDate(app.created_at, true))}
+          form(method='POST' action=`/settings/connected-apps/${encodeURIComponent(app.client_id)}`)
+            if grantableUniverses.length === 0
+              p
+                small #{T('Read-only. None of your universes currently allow edits through MCP.')}
+            else
+              - const granted = Object.fromEntries(app.universes.map((u) => [u.universe_id, u]))
+              table.sheet.mt-2
+                thead
+                  tr
+                    th #{T('Universe')}
+                    th #{T('Create & edit items')}
+                    th #{T('Create & edit my notes')}
+                tbody
+                  each u in grantableUniverses
+                    tr
+                      td #{u.title}
+                      td.center
+                        if u.items
+                          input(type='checkbox' name=`items_write_${u.id}` aria-label=`${T('Create & edit items')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].items_write))
+                      td.center
+                        if u.notes
+                          input(type='checkbox' name=`notes_write_${u.id}` aria-label=`${T('Create & edit my notes')}: ${u.title}` checked=Boolean(granted[u.id] && granted[u.id].notes_write))
+            .d-flex.gap-2.mt-2
+              if grantableUniverses.length > 0
+                button(type='submit') #{T('Save Permissions')}
+              button(type='submit' formaction=`/settings/connected-apps/${encodeURIComponent(app.client_id)}/revoke` onclick=`return confirm(${JSON.stringify(T('Disconnect this application? It will lose all access immediately.'))})`) #{T('Disconnect')}

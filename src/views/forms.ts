@@ -3,13 +3,34 @@ import { RouteHandler } from ".";
 import api from '../api';
 import { perms, Tier } from '../api/utils';
 import embedder from '../embedding';
-import { ModelError, RateLimitError } from "../errors";
+import { ModelError, NotFoundError, RateLimitError, UnauthorizedError } from "../errors";
+import { grantableUniverses, parseGrantForm } from '../mcp/grants';
 import { addDefaultTabs } from '../lib/itemTypeConfig';
 import logger from '../logger';
 import { universeLink } from '../templates';
 import pages from './pages';
 
 export default {
+  async updateConnectedApp(req, res) {
+    const user = req.session.user;
+    if (!user) throw new UnauthorizedError();
+    const clientId = req.params.clientId;
+    const grant = await api.oauth.getGrant(user.id, clientId);
+    if (!grant) throw new NotFoundError();
+    const universes = parseGrantForm(req.body, await grantableUniverses(user));
+    await api.oauth.putGrant(user.id, clientId, universes);
+    logger.info(`MCP grant - user: ${user.id}, client: ${clientId}, write universes: ${JSON.stringify(universes)}`);
+    return res.redirect('/settings?tab=connected-apps');
+  },
+
+  async revokeConnectedApp(req, res) {
+    const user = req.session.user;
+    if (!user) throw new UnauthorizedError();
+    await api.oauth.revokeGrant(user.id, req.params.clientId);
+    logger.info(`MCP grant revoked - user: ${user.id}, client: ${req.params.clientId}`);
+    return res.redirect('/settings?tab=connected-apps');
+  },
+
   async notificationSettings(req, res) {
     const { body, session } = req;
     body['email_notifs'] = body['email_notifs'] === 'on';
@@ -34,6 +55,8 @@ export default {
         mcp_items_enabled: req.body.mcp_items_enabled === 'on',
         mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
         mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
+        mcp_items_write_enabled: req.body.mcp_items_write_enabled === 'on',
+        mcp_notes_write_enabled: req.body.mcp_notes_write_enabled === 'on',
       });
       res.status(201);
       return res.redirect(`${universeLink(req, req.body.shortname)}/`);
@@ -56,6 +79,8 @@ export default {
       mcp_items_enabled: req.body.mcp_items_enabled === 'on',
       mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
       mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
+      mcp_items_write_enabled: req.body.mcp_items_write_enabled === 'on',
+      mcp_notes_write_enabled: req.body.mcp_notes_write_enabled === 'on',
     }
     try {
       const prevUniverse = await api.universe.getOne(req.session.user, { 'universe.shortname': req.params.universeShortname }, perms.READ);

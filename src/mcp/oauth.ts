@@ -6,6 +6,8 @@ import { AccessDeniedError, InvalidGrantError, InvalidTokenError } from '@modelc
 import { OAuthClientInformationFull, OAuthTokenRevocationRequest, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import api from '../api';
 import { render } from '../templates';
+import logger from '../logger';
+import { grantableUniverses, parseGrantForm } from './grants';
 
 class ArchiviumClientsStore implements OAuthRegisteredClientsStore {
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
@@ -32,11 +34,17 @@ export class ArchiviumOAuthProvider implements OAuthServerProvider {
       return;
     }
 
+    const user = req.session.user;
+    const grantable = await grantableUniverses(user);
+
     if (req.method === 'POST') {
       if (req.body?.decision !== 'approve') {
         throw new AccessDeniedError('User denied the authorization request.');
       }
-      const code = await api.oauth.createAuthorizationCode(req.session.user.id, client.client_id, params);
+      const universes = parseGrantForm(req.body, grantable);
+      await api.oauth.putGrant(user.id, client.client_id, universes);
+      logger.info(`MCP grant - user: ${user.id}, client: ${client.client_id}, write universes: ${JSON.stringify(universes)}`);
+      const code = await api.oauth.createAuthorizationCode(user.id, client.client_id, params);
       const redirectUrl = new URL(params.redirectUri);
       redirectUrl.searchParams.set('code', code);
       if (params.state) redirectUrl.searchParams.set('state', params.state);
@@ -45,7 +53,10 @@ export class ArchiviumOAuthProvider implements OAuthServerProvider {
     }
 
     // GET: show the consent screen; the form re-submits all original params as hidden fields.
+    const existing = await api.oauth.getGrant(user.id, client.client_id);
     res.send(await render(req, 'mcpConsent', {
+      grantable,
+      existingGrant: existing ? Object.fromEntries(existing.universes.map((u) => [u.universe_id, u])) : {},
       clientName: client.client_name || client.client_id,
       clientId: client.client_id,
       redirectUri: params.redirectUri,

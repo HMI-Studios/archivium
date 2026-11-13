@@ -269,6 +269,8 @@ export default function(app: Express) {
 
   /* POST Handlers */
   post('/settings/notifications', sites.ALL, [Auth.verifySessionOrRedirect], forms.notificationSettings);
+  post('/settings/connected-apps/:clientId', sites.ALL, [Auth.verifySessionOrRedirect], forms.updateConnectedApp);
+  post('/settings/connected-apps/:clientId/revoke', sites.ALL, [Auth.verifySessionOrRedirect], forms.revokeConnectedApp);
   post('/forgot-password', sites.ALL, [ReCaptcha.verifyReCaptcha], forms.passwordResetRequest);
   post('/reset-password/:key', sites.ALL, [], forms.resetPassword);
   post('/notes/create', sites.ALL, [Auth.verifySessionOrRedirect], forms.createNote);

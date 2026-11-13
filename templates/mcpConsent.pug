@@ -7,9 +7,9 @@ block content
   h2 #{T('Authorize Application')}
   p
     b #{clientName}
-    |  #{T('is requesting access to read worldbuilding data from your Archivium account, on your behalf, via the Model Context Protocol.')}
+    |  #{T('is requesting access to your Archivium worldbuilding data, on your behalf, via the Model Context Protocol.')}
   p
-    small #{T('This will only allow reading items, public notes, and discussions in universes where MCP access is enabled. It cannot make changes to your account or content.')}
+    small #{T('It will be able to read items, public notes, and discussions in universes where MCP access is enabled. It cannot change your account settings.')}
   form(method='POST' action='/authorize')
     input(type='hidden' name='client_id' value=clientId)
     input(type='hidden' name='redirect_uri' value=redirectUri)
@@ -22,6 +22,29 @@ block content
       input(type='hidden' name='state' value=state)
     if resource
       input(type='hidden' name='resource' value=resource)
+
+    if grantable && grantable.length > 0
+      h3 #{T('Write access')}
+      p
+        small #{T('By default this application can only read. You can optionally let it make changes in these universes, limited to what your own permissions allow. You can change this later in your settings.')}
+      table.sheet#mcpGrantTable
+        thead
+          tr
+            th #{T('Universe')}
+            th #{T('Create & edit items')}
+            th #{T('Create & edit my notes')}
+        tbody
+          each u in grantable
+            - const prev = existingGrant[u.id]
+            tr
+              td #{u.title}
+              td.center
+                if u.items
+                  input(type='checkbox' name=`items_write_${u.id}` aria-label=`${T('Create & edit items')}: ${u.title}` checked=Boolean(prev && prev.items_write))
+              td.center
+                if u.notes
+                  input(type='checkbox' name=`notes_write_${u.id}` aria-label=`${T('Create & edit my notes')}: ${u.title}` checked=Boolean(prev && prev.notes_write))
+
     .d-flex.gap-2.mt-2
       button(type='submit' name='decision' value='approve') #{T('Allow')}
       button(type='submit' name='decision' value='deny') #{T('Deny')}
