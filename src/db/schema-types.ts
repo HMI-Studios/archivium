@@ -237,12 +237,39 @@ export interface OauthClient {
   token_endpoint_auth_method: string | null;
 }
 
+export interface OauthGrant {
+  client_id: string;
+  created_at: Date;
+  updated_at: Date;
+  user_id: number;
+}
+
+export interface OauthGrantUniverse {
+  client_id: string;
+  items_write: Generated<boolean>;
+  notes_write: Generated<boolean>;
+  universe_id: number;
+  user_id: number;
+}
+
 export interface OauthRefreshToken {
   client_id: string;
   created_at: Date;
   expires_at: Date;
   scope: string | null;
   token: string;
+  user_id: number;
+}
+
+export interface PersonalAccessToken {
+  client_id: string;
+  created_at: Date;
+  expires_at: Date | null;
+  id: Generated<number>;
+  last_used_at: Date | null;
+  name: string;
+  token_hash: string;
+  token_hint: string;
   user_id: number;
 }
 
@@ -349,7 +376,9 @@ export interface Universe {
   is_public: boolean;
   mcp_discussions_enabled: Generated<boolean>;
   mcp_items_enabled: Generated<boolean>;
+  mcp_items_write_enabled: Generated<boolean>;
   mcp_notes_enabled: Generated<boolean>;
+  mcp_notes_write_enabled: Generated<boolean>;
   obj_data: ColumnType<UniverseObjData, string, string>;
   shortname: string;
   title: string;
@@ -468,7 +497,10 @@ export interface DB {
   oauth_access_token: OauthAccessToken;
   oauth_authorization_code: OauthAuthorizationCode;
   oauth_client: OauthClient;
+  oauth_grant: OauthGrant;
+  oauth_grant_universe: OauthGrantUniverse;
   oauth_refresh_token: OauthRefreshToken;
+  personal_access_token: PersonalAccessToken;
   schema_version: SchemaVersion;
   sentemail: Sentemail;
   sentnotification: Sentnotification;

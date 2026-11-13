@@ -4,6 +4,7 @@ import api from '../../api';
 import { Cond, handleAsNull, handleErrorWithData, perms } from '../../api/utils';
 import { NotFoundError, UnauthorizedError } from '../../errors';
 import { getPfpUrl } from '../../lib/utils';
+import { grantableUniverses } from '../../mcp/grants';
 
 export default {
   /* User Pages */
@@ -48,8 +49,14 @@ export default {
       typeSettings[`${setting.notif_type}_${setting.notif_method}`] = Boolean(setting.is_enabled);
     }
     const [, deleteRequest] = await api.user.getDeleteRequest(user);
+    const grants = await api.oauth.getGrants(user.id);
     res.prepareRender('settings', {
       user,
+      connectedApps: grants.filter((g) => !g.token),
+      accessTokens: grants.filter((g) => g.token),
+      grantableUniverses: await grantableUniverses(user),
+      newToken: null,
+      tokenError: null,
       typeSettings,
       deleteRequest,
       notificationTypes: api.notification.types,

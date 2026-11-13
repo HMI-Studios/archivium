@@ -3,13 +3,68 @@ import { RouteHandler } from ".";
 import api from '../api';
 import { perms, Tier } from '../api/utils';
 import embedder from '../embedding';
-import { ModelError, RateLimitError } from "../errors";
+import { ModelError, NotFoundError, RateLimitError, UnauthorizedError } from "../errors";
+import { grantableUniverses, parseGrantForm } from '../mcp/grants';
+import { MAX_PERSONAL_ACCESS_TOKENS } from '../api/models/oauth';
+
+const ACCESS_TOKEN_EXPIRY_DAYS = [7, 30, 90, 365];
 import { addDefaultTabs } from '../lib/itemTypeConfig';
 import logger from '../logger';
 import { universeLink } from '../templates';
 import pages from './pages';
 
 export default {
+  async updateConnectedApp(req, res) {
+    const user = req.session.user;
+    if (!user) throw new UnauthorizedError();
+    const clientId = req.params.clientId;
+    const grant = await api.oauth.getGrant(user.id, clientId);
+    if (!grant) throw new NotFoundError();
+    const universes = parseGrantForm(req.body, await grantableUniverses(user));
+    await api.oauth.putGrant(user.id, clientId, universes);
+    logger.info(`MCP grant - user: ${user.id}, client: ${clientId}, write universes: ${JSON.stringify(universes)}`);
+    return res.redirect('/settings?tab=connected-apps');
+  },
+
+  async revokeConnectedApp(req, res) {
+    const user = req.session.user;
+    if (!user) throw new UnauthorizedError();
+    await api.oauth.revokeGrant(user.id, req.params.clientId);
+    logger.info(`MCP grant revoked - user: ${user.id}, client: ${req.params.clientId}`);
+    return res.redirect('/settings?tab=connected-apps');
+  },
+
+  async createAccessToken(req, res) {
+    const user = req.session.user;
+    if (!user) throw new UnauthorizedError();
+
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    const expiryDays = req.body.expiry === 'never' ? null : Number(req.body.expiry);
+    let error: string | null = null;
+    if (!name || name.length > 64) error = 'Token name must be between 1 and 64 characters.';
+    else if (expiryDays !== null && !ACCESS_TOKEN_EXPIRY_DAYS.includes(expiryDays)) error = 'Invalid expiry.';
+    else if (await api.oauth.countPersonalAccessTokens(user.id) >= MAX_PERSONAL_ACCESS_TOKENS) {
+      error = `You can have at most ${MAX_PERSONAL_ACCESS_TOKENS} access tokens. Revoke one before creating another.`;
+    }
+
+    let newToken: { name: string, token: string } | null = null;
+    if (!error) {
+      const universes = parseGrantForm(req.body, await grantableUniverses(user));
+      const expiresAt = expiryDays === null ? null : new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000);
+      const token = await api.oauth.createPersonalAccessToken(user.id, name, expiresAt, universes);
+      logger.info(`MCP access token created - user: ${user.id}, name: ${JSON.stringify(name)}, expires: ${expiresAt?.toISOString() ?? 'never'}, write universes: ${JSON.stringify(universes)}`);
+      newToken = { name, token };
+    }
+
+    // Render directly rather than redirecting: the raw token is only ever shown on this response.
+    await pages.user.settings(req, res);
+    if (res.templateData) {
+      res.templateData.data.newToken = newToken;
+      res.templateData.data.tokenError = error;
+    }
+    res.set('Cache-Control', 'no-store');
+  },
+
   async notificationSettings(req, res) {
     const { body, session } = req;
     body['email_notifs'] = body['email_notifs'] === 'on';
@@ -34,6 +89,8 @@ export default {
         mcp_items_enabled: req.body.mcp_items_enabled === 'on',
         mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
         mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
+        mcp_items_write_enabled: req.body.mcp_items_write_enabled === 'on',
+        mcp_notes_write_enabled: req.body.mcp_notes_write_enabled === 'on',
       });
       res.status(201);
       return res.redirect(`${universeLink(req, req.body.shortname)}/`);
@@ -56,6 +113,8 @@ export default {
       mcp_items_enabled: req.body.mcp_items_enabled === 'on',
       mcp_notes_enabled: req.body.mcp_notes_enabled === 'on',
       mcp_discussions_enabled: req.body.mcp_discussions_enabled === 'on',
+      mcp_items_write_enabled: req.body.mcp_items_write_enabled === 'on',
+      mcp_notes_write_enabled: req.body.mcp_notes_write_enabled === 'on',
     }
     try {
       const prevUniverse = await api.universe.getOne(req.session.user, { 'universe.shortname': req.params.universeShortname }, perms.READ);

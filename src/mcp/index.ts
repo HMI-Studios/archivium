@@ -42,13 +42,14 @@ export default function loadMcp(app: Express): void {
 
   app.post('/mcp', bearerAuth, async (req, res, next) => {
     const user = await resolveUser(req);
-    if (!user) {
+    const grant = user && req.auth ? await api.oauth.getGrant(user.id, req.auth.clientId) : undefined;
+    if (!user || !grant) {
       res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized.' }, id: null });
       return next();
     }
 
     try {
-      const server = buildMcpServer(user);
+      const server = buildMcpServer(user, grant);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,
