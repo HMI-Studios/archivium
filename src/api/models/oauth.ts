@@ -2,6 +2,7 @@ import { API } from '..';
 import { kysely } from '../../db/kysely';
 import { sql } from 'kysely';
 import * as utils from '../../lib/hashUtils';
+import { withTransaction } from '../utils';
 import { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 export type OAuthClient = {
@@ -57,6 +58,25 @@ export type RefreshToken = {
   scope: string | null,
   expires_at: Date,
 };
+
+export type GrantUniverse = {
+  universe_id: number,
+  universe_shortname: string,
+  universe_title: string,
+  items_write: boolean,
+  notes_write: boolean,
+};
+
+export type Grant = {
+  user_id: number,
+  client_id: string,
+  client_name: string | null,
+  created_at: Date,
+  updated_at: Date,
+  universes: GrantUniverse[],
+};
+
+export type GrantUniverseInput = { universe_id: number, items_write: boolean, notes_write: boolean };
 
 const AUTH_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const ACCESS_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -210,6 +230,85 @@ export class OAuthAPI {
 
   async revokeRefreshToken(token: string): Promise<void> {
     await kysely.deleteFrom('oauth_refresh_token').where('token', '=', token).execute();
+  }
+
+  async getGrants(userId: number, clientId?: string): Promise<Grant[]> {
+    const grants = await kysely
+      .selectFrom('oauth_grant')
+      .innerJoin('oauth_client', 'oauth_client.client_id', 'oauth_grant.client_id')
+      .select([
+        'oauth_grant.user_id', 'oauth_grant.client_id', 'oauth_client.client_name',
+        'oauth_grant.created_at', 'oauth_grant.updated_at',
+      ])
+      .where('oauth_grant.user_id', '=', userId)
+      .$if(clientId !== undefined, (qb) => qb.where('oauth_grant.client_id', '=', clientId!))
+      .orderBy('oauth_grant.updated_at', 'desc')
+      .execute();
+    if (grants.length === 0) return [];
+
+    const universeRows = await kysely
+      .selectFrom('oauth_grant_universe')
+      .innerJoin('universe', 'universe.id', 'oauth_grant_universe.universe_id')
+      .select([
+        'oauth_grant_universe.client_id', 'oauth_grant_universe.universe_id',
+        'oauth_grant_universe.items_write', 'oauth_grant_universe.notes_write',
+        'universe.shortname as universe_shortname', 'universe.title as universe_title',
+      ])
+      .where('oauth_grant_universe.user_id', '=', userId)
+      .where('oauth_grant_universe.client_id', 'in', grants.map((g) => g.client_id))
+      .orderBy('universe.title')
+      .execute();
+
+    return grants.map((grant) => ({
+      ...grant,
+      universes: universeRows
+        .filter((row) => row.client_id === grant.client_id)
+        .map(({ client_id: _clientId, ...row }) => ({
+          ...row,
+          items_write: Boolean(row.items_write),
+          notes_write: Boolean(row.notes_write),
+        })),
+    }));
+  }
+
+  async getGrant(userId: number, clientId: string): Promise<Grant | undefined> {
+    return (await this.getGrants(userId, clientId))[0];
+  }
+
+  async putGrant(userId: number, clientId: string, universes: GrantUniverseInput[]): Promise<void> {
+    const rows = universes
+      .filter((u) => u.items_write || u.notes_write)
+      .map((u) => ({
+        user_id: userId,
+        client_id: clientId,
+        universe_id: u.universe_id,
+        items_write: u.items_write,
+        notes_write: u.notes_write,
+      }));
+    await withTransaction(async (trx) => {
+      const now = new Date();
+      await trx
+        .insertInto('oauth_grant')
+        .values({ user_id: userId, client_id: clientId, created_at: now, updated_at: now })
+        .onDuplicateKeyUpdate({ updated_at: now })
+        .execute();
+      await trx
+        .deleteFrom('oauth_grant_universe')
+        .where('user_id', '=', userId)
+        .where('client_id', '=', clientId)
+        .execute();
+      if (rows.length > 0) {
+        await trx.insertInto('oauth_grant_universe').values(rows).execute();
+      }
+    });
+  }
+
+  async revokeGrant(userId: number, clientId: string): Promise<void> {
+    await withTransaction(async (trx) => {
+      for (const table of ['oauth_access_token', 'oauth_refresh_token', 'oauth_authorization_code', 'oauth_grant'] as const) {
+        await trx.deleteFrom(table).where('user_id', '=', userId).where('client_id', '=', clientId).execute();
+      }
+    });
   }
 
   async purge(): Promise<void> {

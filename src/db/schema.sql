@@ -105,6 +105,8 @@ CREATE TABLE universe (
   mcp_items_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   mcp_notes_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   mcp_discussions_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  mcp_items_write_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  mcp_notes_write_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   obj_data JSON NOT NULL,
   FOREIGN KEY (author_id) REFERENCES user (id),
   PRIMARY KEY (id)
@@ -526,4 +528,25 @@ CREATE TABLE oauth_refresh_token (
   PRIMARY KEY (token),
   FOREIGN KEY (client_id) REFERENCES oauth_client (client_id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE
+);
+
+CREATE TABLE oauth_grant (
+  user_id INT NOT NULL,
+  client_id VARCHAR(64) NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (user_id, client_id),
+  FOREIGN KEY (client_id) REFERENCES oauth_client (client_id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES user (id) ON DELETE CASCADE
+);
+
+CREATE TABLE oauth_grant_universe (
+  user_id INT NOT NULL,
+  client_id VARCHAR(64) NOT NULL,
+  universe_id INT NOT NULL,
+  items_write BOOLEAN NOT NULL DEFAULT FALSE,
+  notes_write BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (user_id, client_id, universe_id),
+  FOREIGN KEY (user_id, client_id) REFERENCES oauth_grant (user_id, client_id) ON DELETE CASCADE,
+  FOREIGN KEY (universe_id) REFERENCES universe (id) ON DELETE CASCADE
 );

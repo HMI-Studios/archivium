@@ -60,6 +60,8 @@ export type Universe = {
   mcp_items_enabled: boolean,
   mcp_notes_enabled: boolean,
   mcp_discussions_enabled: boolean,
+  mcp_items_write_enabled: boolean,
+  mcp_notes_write_enabled: boolean,
   obj_data: UniverseObjData,
   authors: { [id: number]: string },
   author_permissions: { [id: number]: perms },
@@ -163,6 +165,7 @@ export class UniverseAPI {
         'universe.created_at', 'universe.updated_at', 'universe.is_public',
         'universe.discussion_enabled', 'universe.discussion_open',
         'universe.mcp_items_enabled', 'universe.mcp_notes_enabled', 'universe.mcp_discussions_enabled',
+        'universe.mcp_items_write_enabled', 'universe.mcp_notes_write_enabled',
         'universe.obj_data',
         'owner.username as owner',
         'usu.user_id as sponsoring_user',
@@ -286,7 +289,7 @@ export class UniverseAPI {
     if (!user) throw new UnauthorizedError();
 
     try {
-      const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, obj_data } = body;
+      const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, mcp_items_write_enabled, mcp_notes_write_enabled, obj_data } = body;
 
       const shortnameError = this.validateShortname(shortname);
       if (shortnameError) throw new ValidationError(shortnameError);
@@ -307,6 +310,8 @@ export class UniverseAPI {
             mcp_items_enabled: Boolean(mcp_items_enabled),
             mcp_notes_enabled: Boolean(mcp_notes_enabled),
             mcp_discussions_enabled: Boolean(mcp_discussions_enabled),
+            mcp_items_write_enabled: Boolean(mcp_items_enabled) && Boolean(mcp_items_write_enabled),
+            mcp_notes_write_enabled: Boolean(mcp_notes_enabled) && Boolean(mcp_notes_write_enabled),
             // TODO tighten the type on obj_data here
             obj_data: typeof obj_data === 'string' ? obj_data : JSON.stringify(obj_data),
             created_at: new Date(),
@@ -335,7 +340,7 @@ export class UniverseAPI {
   }
 
   async put(user: User | undefined, universeShortname: string, changes): Promise<number> {
-    const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, obj_data } = changes;
+    const { title, shortname, is_public, discussion_enabled, discussion_open, mcp_items_enabled, mcp_notes_enabled, mcp_discussions_enabled, mcp_items_write_enabled, mcp_notes_write_enabled, obj_data } = changes;
 
     if (!title) throw new ValidationError('Title is required.');
     const universe = await this.getOne(user, { shortname: universeShortname }, perms.WRITE);
@@ -345,6 +350,8 @@ export class UniverseAPI {
     const mcpItems = isPremium && Boolean(mcp_items_enabled);
     const mcpNotes = isPremium && Boolean(mcp_notes_enabled);
     const mcpDiscussions = isPremium && Boolean(mcp_discussions_enabled);
+    const mcpItemsWrite = mcpItems && Boolean(mcp_items_write_enabled);
+    const mcpNotesWrite = mcpNotes && Boolean(mcp_notes_write_enabled);
 
     let parsedObjData: unknown;
     try {
@@ -379,6 +386,8 @@ export class UniverseAPI {
         mcp_items_enabled: mcpItems,
         mcp_notes_enabled: mcpNotes,
         mcp_discussions_enabled: mcpDiscussions,
+        mcp_items_write_enabled: mcpItemsWrite,
+        mcp_notes_write_enabled: mcpNotesWrite,
         obj_data: typeof obj_data === 'string' ? obj_data : JSON.stringify(obj_data),
         updated_at: new Date(),
       })
