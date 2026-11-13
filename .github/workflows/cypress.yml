@@ -12,6 +12,21 @@ jobs:
   cypress-test:
     runs-on: ubuntu-22.04
 
+    env:
+      PORT: 33004
+      HOCUSPOCUS_PORT: 31234
+      PROVIDER_ADDRESS: ws://localhost:31234
+      DOMAIN: dev.archivium.net
+      DEV_MODE: true
+      SENDGRID_API_KEY:
+      OPENAI_API_KEY:
+      WEB_PUSH_ENABLED:
+
+      ARCHIVIUM_DB_HOST: localhost
+      ARCHIVIUM_DB_USER: testuser
+      ARCHIVIUM_DB_PASSWORD: testpassword
+      ARCHIVIUM_DB: archiviumtest
+
     services:
       mysql:
         image: mysql:8.0
@@ -55,31 +70,33 @@ jobs:
 
       - name: Setup database
         run: yes | npm run db:reset
-        env:
-          DEV_MODE: true
-          ARCHIVIUM_DB_HOST: localhost
-          ARCHIVIUM_DB_USER: testuser
-          ARCHIVIUM_DB_PASSWORD: testpassword
-          ARCHIVIUM_DB: archiviumtest
+
+      # The server is started and awaited here rather than through the Cypress action's start/wait-on:
+      # since the runner image update, the action's wait step aborts instantly with "Socket closed before
+      # the connection was established", before it has even launched the server.
+      - name: Start server
+        run: nohup npm start > server.log 2>&1 &
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:33004/; then
+              echo "Server is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Server did not start within 60s. Server log:'
+          cat server.log
+          exit 1
 
       - name: Cypress run
         uses: cypress-io/github-action@v6
         with:
-          start: npm start
-          # Use an IPv4 literal: probing "localhost" makes newer Node try ::1 and 127.0.0.1 together, and while
-          # the server is still starting that fails with an error the action doesn't retry, so it gives up at once.
-          wait-on: 'http://127.0.0.1:33004'
-        env:
-          PORT: 33004
-          HOCUSPOCUS_PORT: 31234
-          PROVIDER_ADDRESS: ws://localhost:31234
-          DOMAIN: dev.archivium.net
-          DEV_MODE: true
-          SENDGRID_API_KEY: 
-          OPENAI_API_KEY: 
-          WEB_PUSH_ENABLED: 
+          # Dependencies and the Cypress binary were installed above; re-running npm ci here
+          # would also swap node_modules out from under the running server.
+          install: false
 
-          ARCHIVIUM_DB_HOST: localhost
-          ARCHIVIUM_DB_USER: testuser
-          ARCHIVIUM_DB_PASSWORD: testpassword
-          ARCHIVIUM_DB: archiviumtest
+      - name: Server log
+        if: always()
+        run: cat server.log || true
