@@ -66,7 +66,9 @@ jobs:
         uses: cypress-io/github-action@v6
         with:
           start: npm start
-          wait-on: 'http://localhost:33004'
+          # Use an IPv4 literal: probing "localhost" makes newer Node try ::1 and 127.0.0.1 together, and while
+          # the server is still starting that fails with an error the action doesn't retry, so it gives up at once.
+          wait-on: 'http://127.0.0.1:33004'
         env:
           PORT: 33004
           HOCUSPOCUS_PORT: 31234
